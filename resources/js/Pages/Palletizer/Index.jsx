@@ -62,9 +62,9 @@ function fmtNum(v) {
 export default function Index({ result }) {
   const { data, setData, post, processing, errors } = useForm({
     province_id: null,
-    mini_pc: 300,
-    tower: 300,
-    laptop: 400,
+    mini_pc: null,
+    tower: null,
+    laptop: null,
     allow_separators: true,
 
     pallet_mode: "auto",
@@ -94,12 +94,7 @@ export default function Index({ result }) {
   const [savingBoxById, setSavingBoxById] = useState({});
   const [boxMsgById, setBoxMsgById] = useState({});
 
-  const openBoxTypesModal = async () => {
-    setBoxModalOpen(true);
-
-    // Si ya los tenemos cargados, no hace falta volver a pedirlos
-    if (boxTypes.length > 0) return;
-
+  const fetchBoxTypes = async () => {
     setLoadingBoxTypes(true);
     setBoxTypesError(null);
 
@@ -112,6 +107,15 @@ export default function Index({ result }) {
       setBoxTypesError(e.message || "Error cargando tipos de caja");
     } finally {
       setLoadingBoxTypes(false);
+    }
+  };
+
+  const openBoxTypesModal = async () => {
+    setBoxModalOpen(true);
+
+    // Si no los tenemos aún, los cargamos
+    if (boxTypes.length === 0) {
+      await fetchBoxTypes();
     }
   };
 
@@ -525,6 +529,69 @@ export default function Index({ result }) {
               </label>
             </div>
 
+            {/* Tipos de caja */}
+            <details className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
+              <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-ink-900">
+                <span>Datos de cajas (actual)</span>
+                <span className="text-xs font-semibold text-ink-500">
+                  {boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}
+                </span>
+              </summary>
+
+              <div className="mt-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs text-ink-500">
+                    Valores usados para el cálculo
+                  </div>
+                  {/* Botón para configurar cajas */}
+                  <button
+                    type="button"
+                    onClick={openBoxTypesModal}
+                    className="inline-flex w-auto items-center justify-center rounded- border border-ink-200 bg-yellow-400 p-1.5 text-xs font-extrabold text-ink-800 hover:bg-yellow-500"
+                  >
+                    Configurar cajas
+                  </button>
+
+                  {/* Botón actualizar */}
+
+                  {/*<button
+                    type="button"
+                    onClick={fetchBoxTypes}
+                    className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
+                  >
+                    Actualizar
+                  </button>*/}
+                </div>
+
+                {loadingBoxTypes ? (
+                  <div className="mt-2 text-sm text-ink-500">Cargando…</div>
+                ) : boxTypesError ? (
+                  <div className="mt-2 text-xs font-semibold text-red-600">{boxTypesError}</div>
+                ) : boxTypes.length === 0 ? (
+                  <div className="mt-2 text-sm text-ink-500">No hay tipos de caja cargados.</div>
+                ) : (
+                  <div className="mt-3 grid gap-3">
+                    {boxTypes.map((b) => (
+                      <div key={b.id} className="rounded-xl bg-white p-3 ring-1 ring-ink-100">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-extrabold text-ink-900">{b.name}</div>
+                          <span className="text-xs font-semibold text-ink-500">{b.code}</span>
+                        </div>
+                        <div className="mt-2 text-xs text-ink-600">
+                          {b.length_cm}×{b.width_cm}×{b.height_cm} cm ·{" "}
+                          {Number(b.weight_kg).toFixed(2)} kg/caja
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-2 text-xs text-ink-500">
+                  Estos valores se usan para calcular capas, altura y peso.
+                </div>
+              </div>
+            </details>
+
             {/* Cantidades */}
             <div className="grid grid-cols-3 gap-3">
               <Field label="Mini PCs" error={errors.mini_pc}>
@@ -564,14 +631,6 @@ export default function Index({ result }) {
               className="inline-flex w-full items-center justify-center rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {processing ? "Calculando..." : "Calcular"}
-            </button>
-            {/* Botón para configurar cajas */}
-            <button
-              type="button"
-              onClick={openBoxTypesModal}
-              className="inline-flex w-full items-center justify-center rounded-xl border border-ink-200 bg-yellow-400 px-3 py-2 text-xs font-extrabold text-ink-800 hover:bg-yellow-500"
-            >
-              Configurar cajas
             </button>
           </form>
         </Card>
