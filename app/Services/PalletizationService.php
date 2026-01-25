@@ -6,27 +6,59 @@ use Illuminate\Support\Facades\DB;
 
 class PalletizationService
 {
-    // Orden “operativo”: torres abajo, luego portátiles, luego minis
+    /**
+     * Orden “operativo” / estabilidad:
+     * - torres (más pesadas) abajo
+     * - luego portátiles
+     * - luego minis (para rellenar huecos)
+     */
     private array $types = ['tower', 'laptop', 'mini_pc'];
 
-    public function calculateBestPlan(int $zoneId, array $items, ?array $allowedPalletTypeCodes = null, bool $allowSeparators = true): array
-    {
+    /**
+     * Calcula el mejor plan para una zona:
+     * - Genera candidatos mono-tipo (solo un tipo de pallet por plan)
+     * - Luego prueba combinaciones mixtas (2 tipos) en modo "auto mezcla"
+     */
+    public function calculateBestPlan(
+        int $zoneId,
+        array $items,
+        ?array $allowedPalletTypeCodes = null,
+        bool $allowSeparators = true
+    ): array {
         $boxTypes = DB::table('box_types')->get()->keyBy('code');
 
         $query = DB::table('pallet_types')->orderBy('id');
+
+        // Si vienes en modo manual (limitando tipos), filtramos aquí.
         if (is_array($allowedPalletTypeCodes) && count($allowedPalletTypeCodes) > 0) {
             $query->whereIn('code', $allowedPalletTypeCodes);
         }
+
+        // IMPORTANT: $palletTypes aquí es una Collection (Illuminate\Support\Collection)
         $palletTypes = $query->get();
 
         $candidates = [];
 
+        // Para no explotar combinaciones: probamos mezcla solo con los mejores N tipos (por precio mono-tipo)
+        $maxTypesForMixing = 3;
 
+        // =========================
+        // 1) CANDIDATOS MONO-TIPO
+        // =========================
         foreach ($palletTypes as $palletType) {
-            $sim = $this->simulatePackingForPalletType($palletType, $boxTypes, $items, $allowSeparators);
+            $sim = $this->simulatePackingForPalletType(
+                $palletType,
+                $boxTypes,
+                $items,
+                $allowSeparators,
+                null // sin límite: hasta completar pedido (comportamiento original)
+            );
 
-            if (($sim['pallet_count'] ?? 0) <= 0) continue;
+            if (($sim['pallet_count'] ?? 0) <= 0) {
+                continue;
+            }
 
+            // Tarifa según tramo para ESTE tipo y número de pallets
             $rate = DB::table('rates')
                 ->where('zone_id', $zoneId)
                 ->where('pallet_type_id', $palletType->id)
@@ -36,6 +68,7 @@ class PalletizationService
                 ->first();
 
             if (!$rate) {
+                // Si no hay tramo exacto, cogemos el último tramo disponible
                 $rate = DB::table('rates')
                     ->where('zone_id', $zoneId)
                     ->where('pallet_type_id', $palletType->id)
@@ -43,19 +76,21 @@ class PalletizationService
                     ->first();
             }
 
-            if (!$rate) continue;
+            if (!$rate) {
+                continue; // no hay tarifa para este tipo en esa zona
+            }
 
             $pricePerPallet = (float) $rate->price_eur;
-            $totalPrice = $pricePerPallet * $sim['pallet_count'];
+            $totalPrice = $pricePerPallet * (int)$sim['pallet_count'];
 
             $candidates[] = [
                 'pallet_type_code' => $palletType->code,
                 'pallet_type_name' => $palletType->name,
-                'pallet_count' => $sim['pallet_count'],
+                'pallet_count' => (int) $sim['pallet_count'],
                 'price_per_pallet' => $pricePerPallet,
                 'total_price' => $totalPrice,
-                'pallets' => $sim['pallets'],
-                'metrics' => $sim['metrics'],
+                'pallets' => $sim['pallets'] ?? [],
+                'metrics' => $sim['metrics'] ?? [],
                 'warnings' => $sim['warnings'] ?? [],
             ];
         }
@@ -64,7 +99,140 @@ class PalletizationService
             return ['error' => 'No hay candidatos: revisa pallet_types y rates para esa zona.'];
         }
 
-        usort($candidates, fn($a, $b) => $a['total_price'] <=> $b['total_price']);
+        // ==========================================
+        // 2) MEZCLA (AUTO): COMBINACIONES DE 2 TIPOS
+        // ==========================================
+        // Nota: aquí asumimos que el tramo de tarifas se aplica por TIPO (según tu schema `rates`).
+        // Es decir, si usas 2 Light y 3 Quarter, se evalúan tramos por separado.
+
+        // Ordenamos los candidatos mono-tipo por precio para escoger "los mejores" tipos
+        $monoCandidates = array_values($candidates);
+        usort($monoCandidates, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
+
+        // Tomamos top N tipos únicos para probar mezcla
+        $mixTypeCodes = array_slice(
+            array_unique(array_map(fn($c) => $c['pallet_type_code'], $monoCandidates)),
+            0,
+            $maxTypesForMixing
+        );
+
+        // $palletTypes es Collection: whereIn funciona
+        $mixTypes = $palletTypes->whereIn('code', $mixTypeCodes)->values();
+
+        // Si hay al menos 2 tipos, probamos mezclas
+        if (count($mixTypes) >= 2) {
+
+            // Heurística: máximo pallets por tipo en mezcla (para evitar explosión combinatoria)
+            $maxPalletsPerTypeInMix = 3;
+
+            for ($i = 0; $i < count($mixTypes); $i++) {
+                for ($j = $i + 1; $j < count($mixTypes); $j++) {
+
+                    $typeA = $mixTypes[$i];
+                    $typeB = $mixTypes[$j];
+
+                    for ($aCount = 1; $aCount <= $maxPalletsPerTypeInMix; $aCount++) {
+
+                        // OJO: 4º param = allowSeparators, 5º = limitPallets
+                        $simA = $this->simulatePackingForPalletType(
+                            $typeA,
+                            $boxTypes,
+                            $items,
+                            $allowSeparators,
+                            $aCount
+                        );
+
+                        $remainingAfterA = $simA['remaining_items'] ?? null;
+                        if (!$remainingAfterA) {
+                            continue;
+                        }
+
+                        // Si A ya cubre todo el pedido, entonces sería un plan mono-tipo (ya existe)
+                        $leftA =
+                            ($remainingAfterA['tower'] ?? 0) +
+                            ($remainingAfterA['laptop'] ?? 0) +
+                            ($remainingAfterA['mini_pc'] ?? 0);
+
+                        if ($leftA === 0) {
+                            continue;
+                        }
+
+                        for ($bCount = 1; $bCount <= $maxPalletsPerTypeInMix; $bCount++) {
+
+                            $simB = $this->simulatePackingForPalletType(
+                                $typeB,
+                                $boxTypes,
+                                $remainingAfterA,
+                                $allowSeparators,
+                                $bCount
+                            );
+
+                            $remainingFinal = $simB['remaining_items'] ?? null;
+                            if (!$remainingFinal) {
+                                continue;
+                            }
+
+                            $leftFinal =
+                                ($remainingFinal['tower'] ?? 0) +
+                                ($remainingFinal['laptop'] ?? 0) +
+                                ($remainingFinal['mini_pc'] ?? 0);
+
+                            if ($leftFinal > 0) {
+                                continue; // no cubre todo el pedido
+                            }
+
+                            // COSTE: calcula tramo por cada tipo según su cantidad dentro del plan mixto
+                            $costA = $this->calculateCostForPalletType($zoneId, $typeA, (int)($simA['pallet_count'] ?? 0));
+                            $costB = $this->calculateCostForPalletType($zoneId, $typeB, (int)($simB['pallet_count'] ?? 0));
+
+                            if ($costA === null || $costB === null) {
+                                continue;
+                            }
+
+                            $totalPrice = $costA + $costB;
+
+                            $candidates[] = [
+                                'pallet_type_code' => "{$typeA->code}+{$typeB->code}",
+                                'pallet_type_name' => "{$simA['pallet_count']}×{$typeA->name} + {$simB['pallet_count']}×{$typeB->name}",
+                                'pallet_count' => (int)($simA['pallet_count'] ?? 0) + (int)($simB['pallet_count'] ?? 0),
+
+                                // En mixto no tiene sentido un €/pallet único
+                                'price_per_pallet' => null,
+                                'total_price' => $totalPrice,
+
+                                // Distribución: primero los pallets A, luego los pallets B
+                                'pallets' => array_merge($simA['pallets'] ?? [], $simB['pallets'] ?? []),
+
+                                // Métricas extra para que la UI pueda mostrarlo bonito después
+                                'metrics' => [
+                                    'mixed' => true,
+                                    'types' => [
+                                        $typeA->code => (int)($simA['pallet_count'] ?? 0),
+                                        $typeB->code => (int)($simB['pallet_count'] ?? 0),
+                                    ],
+                                    'cost_breakdown' => [
+                                        $typeA->code => $costA,
+                                        $typeB->code => $costB,
+                                    ],
+                                ],
+
+                                // Unimos warnings (aunque ahora sean por “último pallet” de cada sub-sim)
+                                'warnings' => array_merge($simA['warnings'] ?? [], $simB['warnings'] ?? []),
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        // =========================
+        // 3) ELEGIR BEST / ALTS
+        // =========================
+        usort($candidates, function ($a, $b) {
+            $ta = $a['total_price'] ?? INF;
+            $tb = $b['total_price'] ?? INF;
+            return $ta <=> $tb;
+        });
 
         return [
             'best' => $candidates[0],
@@ -73,12 +241,13 @@ class PalletizationService
     }
 
     /**
-     * Capa “plana con separador”:
-     * - Intentamos capa completa del tipo base.
-     * - Si no se puede (stock/peso), rellenamos huecos con el siguiente tipo(s)
-     *   intentando completar el número total de posiciones de la capa.
-     * - Si mezclamos alturas distintas dentro de la capa => needs_separator=true
-     * - Solo aceptamos que quede “hueco” si ya no cabe nada más (última capa).
+     * Simula el llenado de pallets de un tipo:
+     * - Capas "planas": intentamos completar la capa (slots) con el tipo base y, si sobran huecos,
+     *   rellenamos con otros tipos.
+     * - Si allowSeparators = true, permitimos mezcla de alturas dentro de la capa (marcando separador).
+     * - limitPallets:
+     *     null => llenar hasta completar pedido (comportamiento normal)
+     *     N    => construir como máximo N pallets (necesario para mezcla de tipos)
      */
     private function simulatePackingForPalletType(
         object $palletType,
@@ -98,13 +267,18 @@ class PalletizationService
         $palletMaxH = (int)$palletType->max_height_cm;
         $palletMaxKg = (float)$palletType->max_weight_kg;
 
-        // Info por tipo
+        // Info por tipo (cajas/capa, altura, peso)
         $info = [];
         foreach ($this->types as $code) {
             if (!isset($boxTypes[$code])) continue;
             $b = $boxTypes[$code];
 
-            $perLayer = $this->boxesPerLayer($palletL, $palletW, (int)$b->length_cm, (int)$b->width_cm);
+            $perLayer = $this->boxesPerLayer(
+                $palletL,
+                $palletW,
+                (int)$b->length_cm,
+                (int)$b->width_cm
+            );
 
             $info[$code] = [
                 'per_layer' => $perLayer,
@@ -123,6 +297,10 @@ class PalletizationService
                         'error' => "Tipo {$code}: datos inválidos (per_layer/height/weight).",
                         'info' => $info,
                     ],
+                    'warnings' => [],
+                    'packed_items' => ['tower' => 0, 'laptop' => 0, 'mini_pc' => 0],
+                    'remaining_items' => $remaining,
+                    'limit_pallets' => $limitPallets,
                 ];
             }
         }
@@ -130,12 +308,12 @@ class PalletizationService
         $pallets = [];
         $guard = 0;
 
-        // Si $limitPallets es null → comportarse como antes (hasta terminar).
-        // Si $limitPallets tiene valor → construir solo ese nº de pallets como máximo.
+        // Si limitPallets es null => hasta terminar; si no => máximo N pallets
         while (($remaining['tower'] + $remaining['laptop'] + $remaining['mini_pc']) > 0) {
             if ($limitPallets !== null && count($pallets) >= $limitPallets) {
                 break;
             }
+
             $guard++;
             if ($guard > 20000) break;
 
@@ -146,10 +324,8 @@ class PalletizationService
             $layers = [];
             $separatorsUsed = 0;
 
-            // Vamos capa a capa
-            $layerIndex = 0;
+            // Construimos capas hasta que no quepa nada más
             while (true) {
-                // Elegimos tipo base para esta capa: el primero con stock que quepa por altura/peso
                 $baseType = $this->pickBaseType($remaining, $info, $heightLeft, $weightLeft);
                 if ($baseType === null) break;
 
@@ -161,7 +337,6 @@ class PalletizationService
                     $weightLeft,
                     $allowSeparators
                 );
-
 
                 if ($layer === null) break;
 
@@ -176,19 +351,18 @@ class PalletizationService
                     $remaining[$code] -= $qty;
                 }
 
-                $heightLeft -= $layer['height_cm'];
-                $weightLeft -= $layer['weight_kg'];
+                $heightLeft -= (int)$layer['height_cm'];
+                $weightLeft -= (float)$layer['weight_kg'];
 
-                if ($layer['needs_separator']) {
+                if (!empty($layer['needs_separator'])) {
                     $separatorsUsed++;
                 }
-
-                $layerIndex++;
 
                 if ($heightLeft <= 0 || $weightLeft <= 0) break;
                 if (($remaining['tower'] + $remaining['laptop'] + $remaining['mini_pc']) <= 0) break;
             }
 
+            // Si no hemos metido nada, abortamos para evitar bucles raros
             if (($load['tower'] + $load['laptop'] + $load['mini_pc']) === 0) {
                 return [
                     'pallet_count' => 0,
@@ -199,6 +373,10 @@ class PalletizationService
                         'info' => $info,
                         'remaining' => $remaining,
                     ],
+                    'warnings' => [],
+                    'packed_items' => ['tower' => 0, 'laptop' => 0, 'mini_pc' => 0],
+                    'remaining_items' => $remaining,
+                    'limit_pallets' => $limitPallets,
                 ];
             }
 
@@ -215,7 +393,7 @@ class PalletizationService
             ];
         }
 
-        // Añadimos métricas de utilización por pallet
+        // Métricas de utilización
         $utilizations = [];
         foreach ($pallets as $i => $p) {
             $utilizations[] = [
@@ -224,9 +402,10 @@ class PalletizationService
             ];
         }
 
+        // Avisos (último pallet infrautilizado)
         $warnings = $this->buildUnderutilizedWarnings($pallets, $palletMaxH, $palletMaxKg);
 
-
+        // Qué hemos empaquetado vs lo que queda
         $packed = [
             'tower' => (int)($items['tower'] ?? 0) - $remaining['tower'],
             'laptop' => (int)($items['laptop'] ?? 0) - $remaining['laptop'],
@@ -246,7 +425,7 @@ class PalletizationService
                 ],
                 'per_type' => $info,
                 'utilizations' => $utilizations,
-                'note' => 'Simulación por capas reales. Avisos si el último pallet está infrautilizado.',
+                'note' => 'Simulación por capas planas con relleno. Avisos si el último pallet está infrautilizado.',
             ],
             'packed_items' => $packed,
             'remaining_items' => $remaining,
@@ -265,8 +444,8 @@ class PalletizationService
             if (($remaining[$code] ?? 0) <= 0) continue;
             if (!isset($info[$code])) continue;
 
-            $h = $info[$code]['height_cm'];
-            $w = $info[$code]['weight_kg'];
+            $h = (int)$info[$code]['height_cm'];
+            $w = (float)$info[$code]['weight_kg'];
 
             if ($h <= $heightLeft && $w <= $weightLeft) {
                 return $code;
@@ -280,7 +459,7 @@ class PalletizationService
      * - baseType define el patrón (per_layer) y la altura de referencia.
      * - intentamos llenar las posiciones de la capa:
      *    1) con baseType
-     *    2) si sobran huecos, rellenamos con otros tipos (laptop/mini_pc)
+     *    2) si sobran huecos, rellenamos con otros tipos
      *
      * needs_separator = true si hay mezcla con alturas diferentes dentro de la capa.
      */
@@ -301,31 +480,31 @@ class PalletizationService
         if ($baseH > $heightLeft) return null;
 
         // Si ni siquiera cabe una caja del baseType por peso, no podemos empezar
-        if ($info[$baseType]['weight_kg'] > $weightLeft) return null;
+        if ((float)$info[$baseType]['weight_kg'] > $weightLeft) return null;
 
         $counts = ['tower' => 0, 'laptop' => 0, 'mini_pc' => 0];
         $layerWeight = 0.0;
         $maxHeightInLayer = 0;
 
-        // 1) Meter lo máximo posible del baseType, hasta completar posiciones o quedarnos sin stock/peso
+        // 1) Meter lo máximo posible del baseType, hasta completar slots o quedarnos sin stock/peso
         $slots = $perLayer;
 
         $canBaseByStock = min($slots, (int)($remaining[$baseType] ?? 0));
-        $canBaseByWeight = (int) floor($weightLeft / $info[$baseType]['weight_kg']);
-        $baseBoxes = max(0, min($canBaseByStock, $canBaseByWeight));
+        $canBaseByWeight = (int) floor($weightLeft / (float)$info[$baseType]['weight_kg']);
 
+        $baseBoxes = max(0, min($canBaseByStock, $canBaseByWeight));
         if ($baseBoxes <= 0) return null;
 
         $counts[$baseType] += $baseBoxes;
         $slots -= $baseBoxes;
-        $layerWeight += $baseBoxes * $info[$baseType]['weight_kg'];
-        $maxHeightInLayer = max($maxHeightInLayer, $info[$baseType]['height_cm']);
+        $layerWeight += $baseBoxes * (float)$info[$baseType]['weight_kg'];
+        $maxHeightInLayer = max($maxHeightInLayer, (int)$info[$baseType]['height_cm']);
 
         // Definimos con qué tipos se puede rellenar una capa según su base
         $fillOrder = match ($baseType) {
             'tower'  => ['mini_pc', 'laptop'], // preferimos minis para huecos de torres
             'laptop' => ['mini_pc'],           // portátiles se pueden completar con minis
-            'mini_pc' => [],                    // minis normalmente ya rellenan bien
+            'mini_pc' => [],                   // minis normalmente ya rellenan bien
             default  => [],
         };
 
@@ -337,12 +516,12 @@ class PalletizationService
 
             // Si NO permitimos separadores, solo dejamos rellenar con misma altura
             if (!$allowSeparators) {
-                if ($info[$code]['height_cm'] !== $info[$baseType]['height_cm']) {
+                if ((int)$info[$code]['height_cm'] !== (int)$info[$baseType]['height_cm']) {
                     continue;
                 }
             }
 
-            $boxKg = $info[$code]['weight_kg'];
+            $boxKg = (float)$info[$code]['weight_kg'];
 
             $maxByStock = min($slots, (int)$remaining[$code]);
             $maxByWeight = (int) floor(($weightLeft - $layerWeight) / $boxKg);
@@ -353,22 +532,16 @@ class PalletizationService
             $counts[$code] += $add;
             $slots -= $add;
             $layerWeight += $add * $boxKg;
-            $maxHeightInLayer = max($maxHeightInLayer, $info[$code]['height_cm']);
+            $maxHeightInLayer = max($maxHeightInLayer, (int)$info[$code]['height_cm']);
         }
 
         $total = $counts['tower'] + $counts['laptop'] + $counts['mini_pc'];
         if ($total <= 0) return null;
 
         // needs_separator:
-        // Si hemos metido más de un tipo Y hay alturas distintas, hace falta separador rígido
-        $typesUsed = [];
-        foreach ($counts as $code => $qty) {
-            if ($qty > 0) $typesUsed[] = $code;
-        }
-
+        // Si hay más de un tipo y hay alturas distintas, hace falta separador rígido
         $needsSeparator = false;
 
-        // Solo tiene sentido si allowSeparators = true. Si está OFF, nunca deberíamos mezclar alturas.
         if ($allowSeparators) {
             $typesUsed = [];
             foreach ($counts as $c => $qty) {
@@ -378,7 +551,7 @@ class PalletizationService
             if (count($typesUsed) > 1) {
                 $h0 = null;
                 foreach ($typesUsed as $c) {
-                    $h = $info[$c]['height_cm'];
+                    $h = (int)$info[$c]['height_cm'];
                     if ($h0 === null) $h0 = $h;
                     if ($h !== $h0) {
                         $needsSeparator = true;
@@ -388,16 +561,13 @@ class PalletizationService
             }
         }
 
-
-        // La altura consumida por la capa es la altura máxima presente en la capa
-        // (para que la siguiente capa apoye en plano sobre un separador)
         return [
             'base_type' => $baseType,
             'counts' => $counts,
             'height_cm' => $maxHeightInLayer,
             'weight_kg' => round($layerWeight, 2),
             'slots_total' => $perLayer,
-            'slots_empty' => $slots, // si >0, son huecos que NO se pudieron rellenar (solo debería pasar si ya no cabe nada)
+            'slots_empty' => $slots, // si >0, huecos que NO se pudieron rellenar
             'needs_separator' => $needsSeparator,
             'allow_separators' => $allowSeparators,
         ];
@@ -414,8 +584,11 @@ class PalletizationService
         return max($a, $b);
     }
 
-    // Calcula % de utilización del pallet (0..1) usando altura y peso.
-    // Cogemos el MAYOR de ambos, porque si vas al límite de peso, aunque falte altura, el pallet está "lleno" a efectos reales.
+    /**
+     * % de utilización (0..1) usando altura y peso.
+     * Cogemos el MAYOR de ambos porque si vas al límite de peso,
+     * aunque falte altura, el pallet está "lleno" a efectos reales.
+     */
     private function palletUtilization(array $pallet, int $palletMaxH, float $palletMaxKg): array
     {
         $heightLeft = (int)($pallet['remaining_capacity']['height_cm_left'] ?? $palletMaxH);
@@ -438,14 +611,17 @@ class PalletizationService
         ];
     }
 
+    /**
+     * Aviso simple: último pallet infrautilizado.
+     * (Luego lo refinaremos para planes mixtos, si quieres.)
+     */
     private function buildUnderutilizedWarnings(array $pallets, int $palletMaxH, float $palletMaxKg): array
     {
         if (count($pallets) === 0) return [];
 
         $warnings = [];
 
-        // Umbrales (ajustables)
-        $lastPalletThreshold = 0.25; // 25% o menos -> aviso fuerte
+        $lastPalletThreshold = 0.25; // 25% o menos -> aviso
         $veryLowBoxesThreshold = 8;  // si el último pallet lleva poquísimas cajas
 
         $lastIdx = count($pallets) - 1;
@@ -453,7 +629,10 @@ class PalletizationService
 
         $u = $this->palletUtilization($last, $palletMaxH, $palletMaxKg);
 
-        $boxes = (int)($last['tower'] ?? 0) + (int)($last['laptop'] ?? 0) + (int)($last['mini_pc'] ?? 0);
+        $boxes =
+            (int)($last['tower'] ?? 0) +
+            (int)($last['laptop'] ?? 0) +
+            (int)($last['mini_pc'] ?? 0);
 
         if ($u['utilization'] <= $lastPalletThreshold || $boxes <= $veryLowBoxesThreshold) {
             $warnings[] = [
@@ -469,5 +648,34 @@ class PalletizationService
         }
 
         return $warnings;
+    }
+
+    /**
+     * Calcula coste TOTAL para un tipo de pallet (precio por tramo * nº pallets),
+     * devolviendo null si no hay tarifas.
+     */
+    private function calculateCostForPalletType(int $zoneId, object $palletType, int $palletCount): ?float
+    {
+        if ($palletCount <= 0) return 0.0;
+
+        $rate = DB::table('rates')
+            ->where('zone_id', $zoneId)
+            ->where('pallet_type_id', $palletType->id)
+            ->where('min_pallets', '<=', $palletCount)
+            ->where('max_pallets', '>=', $palletCount)
+            ->orderBy('min_pallets')
+            ->first();
+
+        if (!$rate) {
+            $rate = DB::table('rates')
+                ->where('zone_id', $zoneId)
+                ->where('pallet_type_id', $palletType->id)
+                ->orderByDesc('max_pallets')
+                ->first();
+        }
+
+        if (!$rate) return null;
+
+        return (float) $rate->price_eur * $palletCount;
     }
 }
