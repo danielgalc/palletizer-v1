@@ -1175,44 +1175,49 @@ export default function Index({ result }) {
                   </div>
                 </details>
               )}
-              <div className="mt-24 flex items-end justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={exportBestPlanPdf}
-                  disabled={!canSubmit || exporting}
-                  className={[
-                    "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-soft transition",
-                    "border border-brand-200 bg-brand-50 text-brand-900",
-                    "hover:bg-brand-100",
-                    "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-white",
-                    "active:translate-y-[1px]",
-                    "disabled:cursor-not-allowed disabled:opacity-60",
-                  ].join(" ")}
-                >
-                  {exporting ? "Exportando…" : "Exportar PDF"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={exportBestPlanExcel}
-                  disabled={!canSubmit || exporting}
-                  className={[
-                    "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-soft transition",
-                    "bg-ink-900 text-white",
-                    "hover:bg-ink-800",
-                    "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-white",
-                    "active:translate-y-[1px]",
-                    "disabled:cursor-not-allowed disabled:opacity-60",
-                  ].join(" ")}
-                >
-                  {exporting ? "Exportando…" : "Exportar Excel"}
-                </button>
-              </div>
 
             </div>
+            
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
           )}
+
+
+          {best && (
+            <div className="mt-24 flex items-end justify-end gap-3">
+            <button
+              type="button"
+              onClick={exportBestPlanPdf}
+              disabled={!canSubmit || exporting}
+              className={[
+                "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-soft transition",
+                "bg-red-700 text-white",
+                "hover:bg-red-800",
+                "focus:outline-none focus:ring-2 focus:ring-red-900 focus:ring-offset-2 focus:ring-offset-white",
+                "active:translate-y-[1px]",
+                "disabled:cursor-not-allowed disabled:opacity-60",
+              ].join(" ")}
+            >
+              {exporting ? "Exportando…" : "Exportar PDF"}
+            </button>
+
+            <button
+              type="button"
+              onClick={exportBestPlanExcel}
+              disabled={!canSubmit || exporting}
+              className={[
+                "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-soft transition",
+                "bg-green-700 text-white",
+                "hover:bg-green-800",
+                "focus:outline-none focus:ring-2 focus:ring-green-900 focus:ring-offset-2 focus:ring-offset-white",
+                "active:translate-y-[1px]",
+                "disabled:cursor-not-allowed disabled:opacity-60",
+              ].join(" ")}
+            >
+              {exporting ? "Exportando…" : "Exportar Excel"}
+            </button>
+          </div>
+          )}         
         </Card>
       </div>
       {boxModalOpen && (
