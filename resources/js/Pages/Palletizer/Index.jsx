@@ -765,14 +765,7 @@ export default function Index({ result }) {
               {processing ? "Calculando..." : "Calcular"}
             </button>
 
-            <button
-              type="button"
-              onClick={exportBestPlanExcel}
-              disabled={!canSubmit || exporting}
-              className="inline-flex w-full items-center justify-center rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-900 shadow-soft transition hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {exporting ? "Exportando…" : "Exportar Excel (plan óptimo)"}
-            </button>
+            {/** Aqui estaba el boton Excel */}
 
             {exportError && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
@@ -1109,6 +1102,25 @@ export default function Index({ result }) {
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
           )}
+
+          <div className="mt-24 flex items-end justify-end gap-3 -p-1">
+            <button
+              type="button"
+              onClick={exportBestPlanExcel}
+              disabled={!canSubmit || exporting}
+              className="inline-flex w-auto items-center justify-center rounded-xl border border-ink-200 bg-red-500 px-4 py-2.5 text-sm font-extrabold text-ink-900 shadow-soft transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exporting ? "Exportando…" : "Exportar PDF"}
+            </button>
+            <button
+              type="button"
+              onClick={exportBestPlanExcel}
+              disabled={!canSubmit || exporting}
+              className="inline-flex w-auto items-center justify-center rounded-xl border border-ink-200 bg-green-500 px-4 py-2.5 text-sm font-extrabold text-ink-900 shadow-soft transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exporting ? "Exportando…" : "Exportar Excel"}
+            </button>
+          </div>
         </Card>
       </div>
       {boxModalOpen && (
