@@ -334,15 +334,22 @@ export default function Index({ result }) {
   const best = result?.plan?.best || null;
   const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
   const metrics = best?.metrics || null;
-  
+
   const palletMeta = metrics?.pallet || null;
   const perType = metrics?.per_type || metrics?.box_info || null;
-  
+
   const [boxTypesDirtyNotice, setBoxTypesDirtyNotice] = useState(false);
-  
+
+  const pricePerPallet =
+    best?.price_per_pallet !== null && best?.price_per_pallet !== undefined
+      ? best.price_per_pallet
+      : (Number(best?.total_price) && Number(best?.pallet_count))
+        ? Number(best.total_price) / Number(best.pallet_count)
+        : null;
+
   // Avisos
   const warnings = Array.isArray(best?.warnings) ? best.warnings : [];
-  
+
   return (
     <AppLayout title="Palletizer">
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
@@ -693,7 +700,7 @@ export default function Index({ result }) {
               )}
               <div className="grid gap-3 sm:grid-cols-3">
                 <Stat label="Pallets" value={fmtNum(best.pallet_count)} />
-                <Stat label="€/pallet" value={fmtEUR(best.price_per_pallet)} />
+                <Stat label="€/pallet" value={fmtEUR(pricePerPallet)} />
                 <Stat label="Total" value={fmtEUR(best.total_price)} />
               </div>
 
@@ -763,11 +770,17 @@ export default function Index({ result }) {
               )}
 
               {/* MÉTRICAS (bonitas) */}
-              {metrics && (
+
+              {metrics && (() => {
+                  const isMixed = !!metrics?.mixed;
+                  const mixTypes = metrics?.types || null;
+                  const mixCosts = metrics?.cost_breakdown || null;
+                  return (
                 <details className="rounded-xl border border-ink-100 p-4">
                   <summary className="cursor-pointer text-sm font-semibold text-ink-800">
                     Métricas de cálculo
                   </summary>
+
 
                   <div className="mt-4 space-y-4">
                     {/* Ficha del pallet */}
@@ -782,6 +795,40 @@ export default function Index({ result }) {
                         </div>
                       </div>
                     )}
+
+                    {isMixed && (
+                      <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                        <div className="text-sm font-extrabold text-ink-900">Plan mixto</div>
+
+                        {mixTypes && (
+                          <div className="mt-3 overflow-x-auto">
+                            <table className="min-w-[420px] w-full border-separate border-spacing-0">
+                              <thead>
+                                <tr className="text-left text-xs text-ink-500">
+                                  <th className="py-2 pr-3">Tipo</th>
+                                  <th className="py-2 pr-3">Pallets</th>
+                                  <th className="py-2 pr-3">Coste</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-sm text-ink-800">
+                                {Object.entries(mixTypes).map(([code, count]) => (
+                                  <tr key={code} className="border-t border-ink-100">
+                                    <td className="py-2 pr-3 font-semibold">{code}</td>
+                                    <td className="py-2 pr-3">{count}</td>
+                                    <td className="py-2 pr-3">{fmtEUR(mixCosts?.[code])}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        <div className="mt-3 text-xs text-ink-500">
+                          Nota: en planes mixtos el “€/pallet” mostrado es el promedio (total / nº pallets).
+                        </div>
+                      </div>
+                    )}
+
 
                     {/* Datos por tipo */}
                     {perType && (
@@ -830,7 +877,8 @@ export default function Index({ result }) {
                     )}
                   </div>
                 </details>
-              )}
+                  );
+              })()}
 
               {/* ALTERNATIVAS (tabla) */}
               {alternatives.length > 0 && (
