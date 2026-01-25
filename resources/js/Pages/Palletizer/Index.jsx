@@ -85,6 +85,89 @@ export default function Index({ result }) {
   const [highlightIndex, setHighlightIndex] = useState(0);
   const containerRef = useRef(null);
 
+  // --- Box types modal ---
+  const [boxModalOpen, setBoxModalOpen] = useState(false);
+  const [boxTypes, setBoxTypes] = useState([]);
+  const [loadingBoxTypes, setLoadingBoxTypes] = useState(false);
+  const [boxTypesError, setBoxTypesError] = useState(null);
+
+  const [savingBoxById, setSavingBoxById] = useState({});
+  const [boxMsgById, setBoxMsgById] = useState({});
+
+  const openBoxTypesModal = async () => {
+    setBoxModalOpen(true);
+
+    // Si ya los tenemos cargados, no hace falta volver a pedirlos
+    if (boxTypes.length > 0) return;
+
+    setLoadingBoxTypes(true);
+    setBoxTypesError(null);
+
+    try {
+      const r = await fetch("/api/box-types");
+      if (!r.ok) throw new Error("No se pudieron cargar los tipos de caja");
+      const list = await r.json();
+      setBoxTypes(Array.isArray(list) ? list : []);
+    } catch (e) {
+      setBoxTypesError(e.message || "Error cargando tipos de caja");
+    } finally {
+      setLoadingBoxTypes(false);
+    }
+  };
+
+  const closeBoxTypesModal = () => {
+    setBoxModalOpen(false);
+  };
+
+  const onBoxChange = (id, field, value) => {
+    setBoxTypes((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
+    setBoxMsgById((prev) => ({ ...prev, [id]: null }));
+  };
+
+  const saveBoxType = async (row) => {
+    const id = row.id;
+    setSavingBoxById((p) => ({ ...p, [id]: true }));
+    setBoxMsgById((p) => ({ ...p, [id]: null }));
+
+    const payload = {
+      name: row.name,
+      length_cm: Number(row.length_cm),
+      width_cm: Number(row.width_cm),
+      height_cm: Number(row.height_cm),
+      weight_kg: Number(row.weight_kg),
+    };
+
+    try {
+      const res = await fetch(`/api/box-types/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        let errText = "No se pudo guardar";
+        try {
+          const data = await res.json();
+          if (data?.message) errText = data.message;
+          if (data?.errors) {
+            const firstKey = Object.keys(data.errors)[0];
+            if (firstKey) errText = data.errors[firstKey][0];
+          }
+        } catch (_) { }
+        throw new Error(errText);
+      }
+
+      const updated = await res.json();
+      setBoxTypes((prev) => prev.map((b) => (b.id === id ? updated : b)));
+      setBoxMsgById((p) => ({ ...p, [id]: { type: "ok", text: "Guardado" } }));
+    } catch (e) {
+      setBoxMsgById((p) => ({ ...p, [id]: { type: "err", text: e.message || "Error guardando" } }));
+    } finally {
+      setSavingBoxById((p) => ({ ...p, [id]: false }));
+    }
+  };
+
+
   useEffect(() => {
     let cancelled = false;
 
@@ -257,9 +340,6 @@ export default function Index({ result }) {
               <h1 className="text-lg font-extrabold tracking-tight text-ink-900">
                 Planificación de pedido
               </h1>
-              <p className="mt-1 text-sm text-ink-500">
-                Destino + cantidades → cálculo óptimo de pallets y coste.
-              </p>
             </div>
             <div className="h-10 w-1 rounded-full bg-brand-500" />
           </div>
@@ -485,6 +565,14 @@ export default function Index({ result }) {
             >
               {processing ? "Calculando..." : "Calcular"}
             </button>
+            {/* Botón para configurar cajas */}
+            <button
+              type="button"
+              onClick={openBoxTypesModal}
+              className="inline-flex w-full items-center justify-center rounded-xl border border-ink-200 bg-yellow-400 px-3 py-2 text-xs font-extrabold text-ink-800 hover:bg-yellow-500"
+            >
+              Configurar cajas
+            </button>
           </form>
         </Card>
 
@@ -697,6 +785,154 @@ export default function Index({ result }) {
           )}
         </Card>
       </div>
+      {boxModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          role="dialog"
+          aria-modal="true"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onMouseDown={closeBoxTypesModal}
+          />
+
+          {/* Modal */}
+          <div className="relative z-10 w-[min(980px,92vw)] rounded-2xl bg-white shadow-soft ring-1 ring-ink-100">
+            <div className="flex items-start justify-between gap-4 border-b border-ink-100 p-5">
+              <div>
+                <div className="text-lg font-extrabold text-ink-900">Configuración de cajas</div>
+                <div className="mt-1 text-sm text-ink-500">
+                  Cambia dimensiones y peso por tipo. Afecta a la simulación.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeBoxTypesModal}
+                className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-extrabold text-ink-800 hover:bg-ink-50"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="p-5">
+              {loadingBoxTypes ? (
+                <div className="text-sm text-ink-500">Cargando…</div>
+              ) : boxTypesError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {boxTypesError} (revisa GET /api/box-types)
+                </div>
+              ) : boxTypes.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-ink-200 bg-ink-50 p-6 text-sm text-ink-600">
+                  No hay tipos de caja en la base de datos.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[860px] w-full border-separate border-spacing-0">
+                    <thead>
+                      <tr className="text-left text-xs text-ink-500">
+                        <th className="py-2 pr-3">Código</th>
+                        <th className="py-2 pr-3">Nombre</th>
+                        <th className="py-2 pr-3">L (cm)</th>
+                        <th className="py-2 pr-3">W (cm)</th>
+                        <th className="py-2 pr-3">H (cm)</th>
+                        <th className="py-2 pr-3">Peso (kg)</th>
+                        <th className="py-2 pr-3"></th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="text-sm text-ink-800">
+                      {boxTypes.map((b) => {
+                        const saving = !!savingBoxById[b.id];
+                        const msg = boxMsgById[b.id];
+
+                        return (
+                          <tr key={b.id} className="border-t border-ink-100">
+                            <td className="py-3 pr-3 font-semibold">{b.code}</td>
+
+                            <td className="py-3 pr-3">
+                              <input
+                                value={b.name ?? ""}
+                                onChange={(e) => onBoxChange(b.id, "name", e.target.value)}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </td>
+
+                            <td className="py-3 pr-3">
+                              <input
+                                type="number"
+                                min="1"
+                                value={b.length_cm ?? ""}
+                                onChange={(e) => onBoxChange(b.id, "length_cm", e.target.value)}
+                                className="w-28 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </td>
+
+                            <td className="py-3 pr-3">
+                              <input
+                                type="number"
+                                min="1"
+                                value={b.width_cm ?? ""}
+                                onChange={(e) => onBoxChange(b.id, "width_cm", e.target.value)}
+                                className="w-28 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </td>
+
+                            <td className="py-3 pr-3">
+                              <input
+                                type="number"
+                                min="1"
+                                value={b.height_cm ?? ""}
+                                onChange={(e) => onBoxChange(b.id, "height_cm", e.target.value)}
+                                className="w-28 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </td>
+
+                            <td className="py-3 pr-3">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={b.weight_kg ?? ""}
+                                onChange={(e) => onBoxChange(b.id, "weight_kg", e.target.value)}
+                                className="w-32 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </td>
+
+                            <td className="py-3 pr-3">
+                              <div className="flex items-center justify-end gap-3">
+                                {msg?.type === "ok" ? (
+                                  <span className="text-xs font-extrabold text-green-700">{msg.text}</span>
+                                ) : msg?.type === "err" ? (
+                                  <span className="text-xs font-extrabold text-red-600">{msg.text}</span>
+                                ) : null}
+
+                                <button
+                                  type="button"
+                                  onClick={() => saveBoxType(b)}
+                                  disabled={saving}
+                                  className="rounded-xl bg-ink-900 px-3 py-2 text-xs font-extrabold text-white shadow-soft transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {saving ? "Guardando…" : "Guardar"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  <div className="mt-3 text-xs text-ink-500">
+                    Recomendación: usa medidas reales de caja (no del equipo) y un peso medio por tipo.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
