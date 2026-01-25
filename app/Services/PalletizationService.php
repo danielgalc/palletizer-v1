@@ -80,8 +80,13 @@ class PalletizationService
      * - Si mezclamos alturas distintas dentro de la capa => needs_separator=true
      * - Solo aceptamos que quede “hueco” si ya no cabe nada más (última capa).
      */
-    private function simulatePackingForPalletType(object $palletType, $boxTypes, array $items, bool $allowSeparators): array
-    {
+    private function simulatePackingForPalletType(
+        object $palletType,
+        $boxTypes,
+        array $items,
+        bool $allowSeparators = true,
+        ?int $limitPallets = null
+    ): array {
         $remaining = [
             'tower' => (int)($items['tower'] ?? 0),
             'laptop' => (int)($items['laptop'] ?? 0),
@@ -125,7 +130,12 @@ class PalletizationService
         $pallets = [];
         $guard = 0;
 
+        // Si $limitPallets es null → comportarse como antes (hasta terminar).
+        // Si $limitPallets tiene valor → construir solo ese nº de pallets como máximo.
         while (($remaining['tower'] + $remaining['laptop'] + $remaining['mini_pc']) > 0) {
+            if ($limitPallets !== null && count($pallets) >= $limitPallets) {
+                break;
+            }
             $guard++;
             if ($guard > 20000) break;
 
@@ -216,6 +226,13 @@ class PalletizationService
 
         $warnings = $this->buildUnderutilizedWarnings($pallets, $palletMaxH, $palletMaxKg);
 
+
+        $packed = [
+            'tower' => (int)($items['tower'] ?? 0) - $remaining['tower'],
+            'laptop' => (int)($items['laptop'] ?? 0) - $remaining['laptop'],
+            'mini_pc' => (int)($items['mini_pc'] ?? 0) - $remaining['mini_pc'],
+        ];
+
         return [
             'pallet_count' => count($pallets),
             'pallets' => $pallets,
@@ -231,6 +248,9 @@ class PalletizationService
                 'utilizations' => $utilizations,
                 'note' => 'Simulación por capas reales. Avisos si el último pallet está infrautilizado.',
             ],
+            'packed_items' => $packed,
+            'remaining_items' => $remaining,
+            'limit_pallets' => $limitPallets,
         ];
     }
 
