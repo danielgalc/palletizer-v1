@@ -1,0 +1,702 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "@inertiajs/react";
+import AppLayout from "@/Layouts/AppLayout";
+
+function normalize(str) {
+  return (str || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function Card({ children, className = "" }) {
+  return (
+    <div className={`rounded-2xl bg-white shadow-soft ring-1 ring-ink-100 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function Field({ label, hint, error, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-semibold text-ink-700">{label}</label>
+      <div className="mt-1">{children}</div>
+      {hint && <div className="mt-1 text-xs text-ink-500">{hint}</div>}
+      {error && <div className="mt-1 text-xs font-semibold text-red-600">{error}</div>}
+    </div>
+  );
+}
+
+function Stat({ label, value, sub }) {
+  return (
+    <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+      <div className="text-xs text-ink-500">{label}</div>
+      <div className="mt-1 text-2xl font-extrabold text-ink-900">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-ink-500">{sub}</div> : null}
+    </div>
+  );
+}
+
+function Pill({ children }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-xs font-extrabold text-brand-800">
+      {children}
+    </span>
+  );
+}
+
+function fmtEUR(v) {
+  const n = Number(v);
+  if (Number.isNaN(n)) return "—";
+  return `${n.toFixed(2)} €`;
+}
+
+function fmtNum(v) {
+  const n = Number(v);
+  if (Number.isNaN(n)) return "—";
+  return String(n);
+}
+
+export default function Index({ result }) {
+  const { data, setData, post, processing, errors } = useForm({
+    province_id: null,
+    mini_pc: 300,
+    tower: 300,
+    laptop: 400,
+    allow_separators: true,
+
+    pallet_mode: "auto",
+    pallet_type_codes: [],
+  });
+
+  const [provinces, setProvinces] = useState([]);
+  const [loadingProvinces, setLoadingProvinces] = useState(true);
+  const [provincesError, setProvincesError] = useState(null);
+
+  const [palletTypes, setPalletTypes] = useState([]);
+  const [loadingPalletTypes, setLoadingPalletTypes] = useState(true);
+  const [palletTypesError, setPalletTypesError] = useState(null);
+
+  // Autocomplete state
+  const [query, setQuery] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/pallet-types")
+      .then((r) => {
+        if (!r.ok) throw new Error("No se pudieron cargar tipos de pallet");
+        return r.json();
+      })
+      .then((list) => {
+        if (cancelled) return;
+        setPalletTypes(list);
+        setLoadingPalletTypes(false);
+
+        if (Array.isArray(list) && list.length > 0 && data.pallet_type_codes.length === 0) {
+          setData("pallet_type_codes", list.map((t) => t.code));
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadingPalletTypes(false);
+        setPalletTypesError(e.message || "Error cargando tipos de pallet");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/provinces")
+      .then((r) => {
+        if (!r.ok) throw new Error("No se pudieron cargar provincias");
+        return r.json();
+      })
+      .then((list) => {
+        if (cancelled) return;
+        setProvinces(list);
+        setLoadingProvinces(false);
+
+        /* const zaragoza = list.find((p) => normalize(p.name) === "zaragoza");
+         const initial = zaragoza || list[0];
+ 
+         if (initial) {
+           setData("province_id", initial.id);
+           setQuery(initial.name);
+         } */
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadingProvinces(false);
+        setProvincesError(e.message || "Error cargando provincias");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedProvinceObj = useMemo(() => {
+    return provinces.find((p) => p.id === data.province_id) || null;
+  }, [provinces, data.province_id]);
+
+  useEffect(() => {
+    if (selectedProvinceObj && query !== selectedProvinceObj.name) {
+      setQuery(selectedProvinceObj.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.province_id]);
+
+  const filtered = useMemo(() => {
+    const q = normalize(query);
+    if (!q) return provinces;
+
+    const starts = [];
+    const contains = [];
+
+    for (const p of provinces) {
+      const nameN = normalize(p.name);
+      if (nameN.startsWith(q)) starts.push(p);
+      else if (nameN.includes(q)) contains.push(p);
+    }
+
+    return [...starts, ...contains].slice(0, 12);
+  }, [provinces, query]);
+
+  const selectProvince = (p) => {
+    setData("province_id", p.id);
+    setQuery(p.name);
+    setIsOpen(false);
+    setHighlightIndex(0);
+  };
+
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const onKeyDown = (e) => {
+    if (!isOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      setIsOpen(true);
+      return;
+    }
+    if (!isOpen) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIndex((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      if (filtered[highlightIndex]) {
+        e.preventDefault();
+        selectProvince(filtered[highlightIndex]);
+      } else {
+        setIsOpen(false);
+      }
+    } else if (e.key === "Escape") {
+      setIsOpen(false);
+    }
+  };
+
+  const submit = (e) => {
+    e.preventDefault();
+
+    try {
+      if (typeof route === "function") {
+        post(route("palletizer.calculate"), { preserveScroll: true });
+        return;
+      }
+    } catch (_) { }
+
+    post("/palletizer/calculate", { preserveScroll: true });
+  };
+
+  const manualOk = data.pallet_mode !== "manual" || data.pallet_type_codes.length > 0;
+
+  const canSubmit =
+    !processing &&
+    !loadingProvinces &&
+    !provincesError &&
+    data.province_id !== null &&
+    provinces.some((p) => p.id === data.province_id) &&
+    manualOk;
+
+  const best = result?.plan?.best || null;
+  const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
+  const metrics = best?.metrics || null;
+
+  const palletMeta = metrics?.pallet || null;
+  const perType = metrics?.per_type || metrics?.box_info || null;
+
+  return (
+    <AppLayout title="Palletizer">
+      <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
+        {/* Panel izquierdo */}
+        <Card className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h1 className="text-lg font-extrabold tracking-tight text-ink-900">
+                Planificación de pedido
+              </h1>
+              <p className="mt-1 text-sm text-ink-500">
+                Destino + cantidades → cálculo óptimo de pallets y coste.
+              </p>
+            </div>
+            <div className="h-10 w-1 rounded-full bg-brand-500" />
+          </div>
+
+          <form onSubmit={submit} className="mt-5 space-y-4">
+            {/* Provincia */}
+            <Field
+              label="Provincia destino"
+              hint={
+                selectedProvinceObj?.zone_name
+                  ? `Seleccionada: ${selectedProvinceObj.name} · ${selectedProvinceObj.zone_name}`
+                  : "Escribe para buscar (ej. Zara, Mad...)"
+              }
+              error={errors.province_id}
+            >
+              <div ref={containerRef} className="relative">
+                <input
+                  value={query}
+                  disabled={loadingProvinces || !!provincesError}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setIsOpen(true);
+                    setHighlightIndex(0);
+                  }}
+                  onFocus={() => setIsOpen(true)}
+                  onKeyDown={onKeyDown}
+                  placeholder={loadingProvinces ? "Cargando..." : "Buscar provincia..."}
+                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                />
+
+                {isOpen && !loadingProvinces && !provincesError && (
+                  <div className="absolute left-0 right-0 top-[42px] z-20 max-h-72 overflow-auto rounded-xl border border-ink-200 bg-white shadow-soft">
+                    {filtered.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-ink-500">Sin resultados.</div>
+                    ) : (
+                      filtered.map((p, idx) => (
+                        <div
+                          key={p.id}
+                          onMouseEnter={() => setHighlightIndex(idx)}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            selectProvince(p);
+                          }}
+                          className={[
+                            "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
+                            idx === highlightIndex ? "bg-ink-50" : "bg-white",
+                          ].join(" ")}
+                        >
+                          <span className="text-ink-800">{p.name}</span>
+                          <span className="whitespace-nowrap text-xs text-ink-500">
+                            {p.zone_name}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {provincesError && (
+                <div className="mt-2 text-xs font-semibold text-red-600">
+                  {provincesError} (revisa GET /api/provinces)
+                </div>
+              )}
+            </Field>
+
+            {/* Tipos de pallet */}
+            <div className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
+              <div className="text-sm font-extrabold text-ink-900">Tipos de pallet</div>
+
+              <div className="mt-3 flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm text-ink-800">
+                  <input
+                    type="radio"
+                    name="pallet_mode"
+                    value="auto"
+                    checked={data.pallet_mode === "auto"}
+                    onChange={() => setData("pallet_mode", "auto")}
+                    className="h-4 w-4 accent-brand-500"
+                  />
+                  Auto (recomendado)
+                </label>
+
+                <label className="flex items-center gap-2 text-sm text-ink-800">
+                  <input
+                    type="radio"
+                    name="pallet_mode"
+                    value="manual"
+                    checked={data.pallet_mode === "manual"}
+                    onChange={() => setData("pallet_mode", "manual")}
+                    className="h-4 w-4 accent-brand-500"
+                  />
+                  Manual (seleccionar)
+                </label>
+              </div>
+
+              {loadingPalletTypes ? (
+                <div className="mt-3 text-sm text-ink-500">Cargando tipos de pallet…</div>
+              ) : palletTypesError ? (
+                <div className="mt-3 text-sm font-semibold text-red-600">{palletTypesError}</div>
+              ) : data.pallet_mode === "manual" ? (
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setData("pallet_type_codes", palletTypes.map((t) => t.code))}
+                      className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
+                    >
+                      Seleccionar todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setData("pallet_type_codes", [])}
+                      className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
+                    >
+                      Quitar todos
+                    </button>
+                  </div>
+
+                  <div className="grid gap-2">
+                    {palletTypes.map((t) => {
+                      const checked = data.pallet_type_codes.includes(t.code);
+                      return (
+                        <label key={t.code} className="flex items-center gap-2 text-sm text-ink-800">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...data.pallet_type_codes, t.code]
+                                : data.pallet_type_codes.filter((c) => c !== t.code);
+                              setData("pallet_type_codes", next);
+                            }}
+                            className="h-4 w-4 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
+                          />
+                          <span className="font-semibold">{t.name}</span>
+                          <span className="text-xs text-ink-500">({t.code})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {errors.pallet_type_codes && (
+                    <div className="text-xs font-semibold text-red-600">{errors.pallet_type_codes}</div>
+                  )}
+
+                  {data.pallet_type_codes.length === 0 && (
+                    <div className="text-xs font-semibold text-red-600">
+                      Selecciona al menos un tipo de pallet o usa modo Auto.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-3 text-sm text-ink-500">
+                  Se evaluarán automáticamente todos los tipos disponibles.
+                </div>
+              )}
+            </div>
+
+            {/* Toggle separadores */}
+            <div className="rounded-2xl border border-ink-100 bg-white p-4">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={data.allow_separators}
+                  onChange={(e) => setData("allow_separators", e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
+                />
+                <div>
+                  <div className="text-sm font-extrabold text-ink-900">
+                    Permitir separador para capas mixtas
+                  </div>
+                  <div className="mt-1 text-xs text-ink-500">
+                    Si está activado, se puede rellenar una capa con otros tipos aunque tengan distinta altura,
+                    contabilizando separadores. Si está desactivado, solo se rellena con cajas de la misma altura.
+                  </div>
+                  {errors.allow_separators && (
+                    <div className="mt-2 text-xs font-semibold text-red-600">
+                      {errors.allow_separators}
+                    </div>
+                  )}
+                </div>
+              </label>
+            </div>
+
+            {/* Cantidades */}
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Mini PCs" error={errors.mini_pc}>
+                <input
+                  type="number"
+                  min="0"
+                  value={data.mini_pc}
+                  onChange={(e) => setData("mini_pc", Number(e.target.value))}
+                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                />
+              </Field>
+
+              <Field label="Torres" error={errors.tower}>
+                <input
+                  type="number"
+                  min="0"
+                  value={data.tower}
+                  onChange={(e) => setData("tower", Number(e.target.value))}
+                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                />
+              </Field>
+
+              <Field label="Portátiles" error={errors.laptop}>
+                <input
+                  type="number"
+                  min="0"
+                  value={data.laptop}
+                  onChange={(e) => setData("laptop", Number(e.target.value))}
+                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                />
+              </Field>
+            </div>
+
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="inline-flex w-full items-center justify-center rounded-xl bg-ink-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-soft transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {processing ? "Calculando..." : "Calcular"}
+            </button>
+          </form>
+        </Card>
+
+        {/* Panel derecho */}
+        <Card className="p-5">
+          <div className="mx-auto flex items-center justify-center px-4 py-2">
+            <div className="h-12 w-52 overflow-hidden flex items-center justify-center">
+              <img
+                src="/palletizer.png"
+                alt="Palletizer"
+                className="h-30 mt-1 w-auto object-contain"
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-extrabold text-ink-900">Resultado</h2>
+            {best && <Pill>Óptimo</Pill>}
+          </div>
+
+          {!result ? (
+            <div className="mt-4 rounded-xl border border-dashed border-ink-200 bg-ink-50 p-6 text-sm text-ink-600">
+              Introduce los datos y pulsa <b>Calcular</b>.
+            </div>
+          ) : result?.plan?.error ? (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {result.plan.error}
+            </div>
+          ) : best ? (
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <Stat label="Pallets" value={fmtNum(best.pallet_count)} />
+                <Stat label="€/pallet" value={fmtEUR(best.price_per_pallet)} />
+                <Stat label="Total" value={fmtEUR(best.total_price)} />
+              </div>
+
+              <div className="rounded-xl border border-ink-100 p-4">
+                <div className="text-sm font-extrabold text-ink-900">{best.pallet_type_name}</div>
+                <div className="mt-1 text-xs text-ink-500">
+                  Destino: {result.province} · Zona {result.zone_id}
+                </div>
+              </div>
+
+              {/* Distribución */}
+              {Array.isArray(best.pallets) && best.pallets.length > 0 && (
+                <details className="rounded-xl border border-ink-100 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-ink-800">
+                    Distribución por pallet (primeros 10)
+                  </summary>
+
+                  <div className="mt-4 space-y-3">
+                    {best.pallets.slice(0, 10).map((p, idx) => (
+                      <div key={idx} className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                          <div className="font-extrabold text-ink-900">Pallet #{idx + 1}</div>
+                          <div>Torres: <b>{p.tower}</b></div>
+                          <div>Portátiles: <b>{p.laptop}</b></div>
+                          <div>Minis: <b>{p.mini_pc}</b></div>
+                          {"separators_used" in p && (
+                            <div className="text-ink-600">
+                              Separadores: <b>{p.separators_used}</b>
+                            </div>
+                          )}
+                          {p.remaining_capacity?.height_cm_left !== undefined && (
+                            <div className="text-ink-600">
+                              Altura libre: <b>{p.remaining_capacity.height_cm_left}</b> cm · Peso libre:{" "}
+                              <b>{p.remaining_capacity.weight_kg_left}</b> kg
+                            </div>
+                          )}
+                        </div>
+
+                        {Array.isArray(p.layers) && p.layers.length > 0 && (
+                          <details className="mt-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-ink-800">
+                              Ver capas
+                            </summary>
+
+                            <div className="mt-3 space-y-2">
+                              {p.layers.map((layer, i) => (
+                                <div key={i} className="rounded-lg bg-white p-3 ring-1 ring-ink-100">
+                                  <div className="text-xs text-ink-500">
+                                    Capa {i + 1} · Base <b>{layer.base_type}</b> · altura {layer.height_cm} cm · peso{" "}
+                                    {layer.weight_kg} kg
+                                    {layer.needs_separator ? " · separador" : ""}
+                                    {layer.slots_empty > 0 ? ` · huecos ${layer.slots_empty}` : ""}
+                                  </div>
+                                  <div className="mt-1 text-sm text-ink-800">
+                                    Torres: <b>{layer.counts?.tower ?? 0}</b> · Portátiles:{" "}
+                                    <b>{layer.counts?.laptop ?? 0}</b> · Minis: <b>{layer.counts?.mini_pc ?? 0}</b>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              {/* MÉTRICAS (bonitas) */}
+              {metrics && (
+                <details className="rounded-xl border border-ink-100 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-ink-800">
+                    Métricas de cálculo
+                  </summary>
+
+                  <div className="mt-4 space-y-4">
+                    {/* Ficha del pallet */}
+                    {palletMeta && (
+                      <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                        <div className="text-sm font-extrabold text-ink-900">Pallet (límites)</div>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                          <Stat label="L (cm)" value={fmtNum(palletMeta.L_cm ?? palletMeta.L)} />
+                          <Stat label="W (cm)" value={fmtNum(palletMeta.W_cm ?? palletMeta.W)} />
+                          <Stat label="H máx (cm)" value={fmtNum(palletMeta.H_cm ?? palletMeta.H)} />
+                          <Stat label="Kg máx" value={fmtNum(palletMeta.max_kg ?? palletMeta.kg)} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Datos por tipo */}
+                    {perType && (
+                      <div className="rounded-xl border border-ink-100 p-4">
+                        <div className="text-sm font-extrabold text-ink-900">Cajas por tipo</div>
+                        <div className="mt-3 overflow-x-auto">
+                          <table className="min-w-[520px] w-full border-separate border-spacing-0">
+                            <thead>
+                              <tr className="text-left text-xs text-ink-500">
+                                <th className="py-2 pr-3">Tipo</th>
+                                <th className="py-2 pr-3">Cajas/capa</th>
+                                <th className="py-2 pr-3">Altura (cm)</th>
+                                <th className="py-2 pr-3">Peso/caja (kg)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-sm text-ink-800">
+                              {["tower", "laptop", "mini_pc"].map((code) => {
+                                const t = perType?.[code];
+                                if (!t) return null;
+                                return (
+                                  <tr key={code} className="border-t border-ink-100">
+                                    <td className="py-2 pr-3 font-semibold">
+                                      {code === "tower"
+                                        ? "Torres"
+                                        : code === "laptop"
+                                          ? "Portátiles"
+                                          : "Mini PCs"}
+                                    </td>
+                                    <td className="py-2 pr-3">{fmtNum(t.per_layer)}</td>
+                                    <td className="py-2 pr-3">{fmtNum(t.height_cm)}</td>
+                                    <td className="py-2 pr-3">{fmtNum(t.weight_kg)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Nota */}
+                    {metrics?.note && (
+                      <div className="text-xs text-ink-500">
+                        <b>Nota:</b> {metrics.note}
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
+
+              {/* ALTERNATIVAS (tabla) */}
+              {alternatives.length > 0 && (
+                <details className="rounded-xl border border-ink-100 p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-ink-800">
+                    Alternativas
+                  </summary>
+
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-[620px] w-full border-separate border-spacing-0">
+                      <thead>
+                        <tr className="text-left text-xs text-ink-500">
+                          <th className="py-2 pr-3">Tipo</th>
+                          <th className="py-2 pr-3">Pallets</th>
+                          <th className="py-2 pr-3">€/pallet</th>
+                          <th className="py-2 pr-3">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm text-ink-800">
+                        {alternatives.map((a, idx) => (
+                          <tr key={idx} className="border-t border-ink-100">
+                            <td className="py-2 pr-3 font-semibold">{a.pallet_type_name}</td>
+                            <td className="py-2 pr-3">{fmtNum(a.pallet_count)}</td>
+                            <td className="py-2 pr-3">{fmtEUR(a.price_per_pallet)}</td>
+                            <td className="py-2 pr-3">{fmtEUR(a.total_price)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-3 text-xs text-ink-500">
+                    Consejo: si una alternativa es muy parecida en coste, a veces compensa por facilidad de montaje
+                    (menos capas mixtas / menos separadores).
+                  </div>
+                </details>
+              )}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
+          )}
+        </Card>
+      </div>
+    </AppLayout>
+  );
+}

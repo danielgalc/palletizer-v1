@@ -1,0 +1,39 @@
+<?php
+
+use App\Http\Controllers\ProfileController;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+use App\Http\Controllers\PalletizerController;
+
+Route::get('/', function () {
+    return Inertia::render('Welcome', [
+        'canLogin' => Route::has('login'),
+        'canRegister' => Route::has('register'),
+        'laravelVersion' => Application::VERSION,
+        'phpVersion' => PHP_VERSION,
+    ]);
+});
+
+Route::get('/dashboard', function () {
+    return Inertia::render('Dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+// Rutas Palletizer
+
+Route::get('/palletizer', function () {
+    return Inertia::render('Palletizer/Index');
+})->name('palletizer');
+
+
+Route::get('/palletizer', [PalletizerController::class, 'index'])->name('palletizer.index');
+Route::post('/palletizer/calculate', [PalletizerController::class, 'calculate'])->name('palletizer.calculate');
+
+
+require __DIR__.'/auth.php';
