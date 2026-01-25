@@ -136,6 +136,11 @@ export default function Index({ result }) {
   const [savingBoxById, setSavingBoxById] = useState({});
   const [boxMsgById, setBoxMsgById] = useState({});
 
+  // Exportacion de docs
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+
+
 
 
   const fetchBoxTypes = async () => {
@@ -361,6 +366,67 @@ export default function Index({ result }) {
     } catch (_) { }
 
     post("/palletizer/calculate", { preserveScroll: true });
+  };
+
+  const exportBestPlanExcel = async () => {
+    setExporting(true);
+    setExportError(null);
+
+    try {
+      // Validación mínima (misma lógica que canSubmit)
+      if (!canSubmit) {
+        throw new Error("Completa el formulario antes de exportar.");
+      }
+
+      const payload = {
+        province_id: data.province_id,
+        tower: Number(data.tower ?? 0),
+        laptop: Number(data.laptop ?? 0),
+        mini_pc: Number(data.mini_pc ?? 0),
+        allow_separators: !!data.allow_separators,
+        pallet_mode: data.pallet_mode,
+        pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
+      };
+
+      const res = await fetch("/api/export/best-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        // Intentar leer mensaje de error JSON
+        let msg = "No se pudo exportar.";
+        try {
+          const j = await res.json();
+          if (j?.message) msg = j.message;
+        } catch (_) { }
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+
+      // Nombre sugerido desde backend (si viene)
+      const contentDisposition = res.headers.get("content-disposition");
+      let filename = "best_plan.xlsx";
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/i);
+        if (match?.[1]) filename = match[1];
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportError(e.message || "Error exportando");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const manualOk = data.pallet_mode !== "manual" || data.pallet_type_codes.length > 0;
@@ -698,6 +764,21 @@ export default function Index({ result }) {
             >
               {processing ? "Calculando..." : "Calcular"}
             </button>
+
+            <button
+              type="button"
+              onClick={exportBestPlanExcel}
+              disabled={!canSubmit || exporting}
+              className="inline-flex w-full items-center justify-center rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm font-extrabold text-ink-900 shadow-soft transition hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exporting ? "Exportando…" : "Exportar Excel (plan óptimo)"}
+            </button>
+
+            {exportError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                {exportError}
+              </div>
+            )}
           </form>
         </Card>
 
@@ -994,7 +1075,7 @@ export default function Index({ result }) {
                               </div>
 
                               {/* Desglosa los costes en las alternativas */}
-                              
+
                               {/* {(a.price_per_pallet === null || a.price_per_pallet === undefined) && (
                                 <div className="mt-1 text-xs text-ink-500">
                                   {a.metrics?.cost_breakdown && (
