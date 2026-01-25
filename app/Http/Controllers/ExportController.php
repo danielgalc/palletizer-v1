@@ -15,17 +15,20 @@ use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 
+use Barryvdh\DomPDF\Facade\Pdf;
+
+
 class ExportController extends Controller
 {
     public function bestPlan(Request $request, PalletizationService $service): StreamedResponse
     {
         $v = Validator::make($request->all(), [
-            'province_id' => ['required','integer'],
-            'tower' => ['nullable','integer','min:0'],
-            'laptop' => ['nullable','integer','min:0'],
-            'mini_pc' => ['nullable','integer','min:0'],
+            'province_id' => ['required', 'integer'],
+            'tower' => ['nullable', 'integer', 'min:0'],
+            'laptop' => ['nullable', 'integer', 'min:0'],
+            'mini_pc' => ['nullable', 'integer', 'min:0'],
             'allow_separators' => ['boolean'],
-            'pallet_mode' => ['required','in:auto,manual'],
+            'pallet_mode' => ['required', 'in:auto,manual'],
             'pallet_type_codes' => ['array'],
             'pallet_type_codes.*' => ['string'],
         ]);
@@ -147,7 +150,7 @@ class ExportController extends Controller
 
             if ($end >= $start) {
                 $this->moneyFormat($summary, "C{$start}:C{$end}");
-                $this->setAutoFilterAndFreeze($summary, "A".($start - 1).":C{$end}", "A3");
+                $this->setAutoFilterAndFreeze($summary, "A" . ($start - 1) . ":C{$end}", "A3");
             }
             $row += 1;
         }
@@ -171,11 +174,11 @@ class ExportController extends Controller
             $end = $row - 1;
 
             if ($end >= $start) {
-                $this->setAutoFilterAndFreeze($summary, "A".($start - 1).":B{$end}", "A3");
+                $this->setAutoFilterAndFreeze($summary, "A" . ($start - 1) . ":B{$end}", "A3");
             }
         }
 
-        $this->autosizeColumns($summary, ['A','B','C']);
+        $this->autosizeColumns($summary, ['A', 'B', 'C']);
         $summary->getColumnDimension('A')->setWidth(24);
         $summary->getColumnDimension('B')->setWidth(60);
 
@@ -207,10 +210,10 @@ class ExportController extends Controller
         }
 
         if ($r > 4) {
-            $this->num2Format($palletSheet, "G4:G".($r - 1), 'kg');
+            $this->num2Format($palletSheet, "G4:G" . ($r - 1), 'kg');
         }
 
-        $this->autosizeColumns($palletSheet, ['A','B','C','D','E','F','G','H']);
+        $this->autosizeColumns($palletSheet, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
 
         // ======================
         // HOJA 3: CAPAS
@@ -245,10 +248,10 @@ class ExportController extends Controller
         }
 
         if ($r > 4) {
-            $this->num2Format($layerSheet, "H4:H".($r - 1), 'kg');
+            $this->num2Format($layerSheet, "H4:H" . ($r - 1), 'kg');
         }
 
-        $this->autosizeColumns($layerSheet, ['A','B','C','D','E','F','G','H','I','J']);
+        $this->autosizeColumns($layerSheet, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']);
 
         // Volver a Resumen por defecto
         $spreadsheet->setActiveSheetIndex(0);
@@ -261,6 +264,69 @@ class ExportController extends Controller
         }, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
+    }
+
+    public function bestPlanPdf(Request $request, PalletizationService $service)
+    {
+        // Reutiliza la misma validación / resolución de zona / items que en bestPlan()
+        // (puedes copiar y pegar y luego refactorizamos en una función privada si quieres)
+
+        $v = Validator::make($request->all(), [
+            'province_id' => ['required', 'integer'],
+            'tower' => ['nullable', 'integer', 'min:0'],
+            'laptop' => ['nullable', 'integer', 'min:0'],
+            'mini_pc' => ['nullable', 'integer', 'min:0'],
+            'allow_separators' => ['boolean'],
+            'pallet_mode' => ['required', 'in:auto,manual'],
+            'pallet_type_codes' => ['array'],
+            'pallet_type_codes.*' => ['string'],
+        ]);
+        $v->validate();
+
+        $province = \DB::table('provinces')->where('id', $request->province_id)->first();
+        if (!$province) abort(422, 'Provincia no encontrada');
+
+        $zoneId = (int)($province->zone_id ?? 0);
+        if ($zoneId <= 0) abort(422, 'La provincia no tiene zone_id válido');
+
+        $items = [
+            'tower' => (int)($request->tower ?? 0),
+            'laptop' => (int)($request->laptop ?? 0),
+            'mini_pc' => (int)($request->mini_pc ?? 0),
+        ];
+
+        $allowSeparators = (bool)($request->allow_separators ?? true);
+
+        $allowedTypes = null;
+        if ($request->pallet_mode === 'manual') {
+            $allowedTypes = $request->pallet_type_codes ?? [];
+        }
+
+        $plan = $service->calculateBestPlan($zoneId, $items, $allowedTypes, $allowSeparators);
+        if (!empty($plan['error'])) abort(422, $plan['error']);
+
+        $best = $plan['best'] ?? null;
+        if (!$best) abort(422, 'No hay plan óptimo');
+
+        $total = (float)($best['total_price'] ?? 0);
+        $count = (int)($best['pallet_count'] ?? 0);
+        $avg = ($count > 0) ? ($total / $count) : 0;
+
+        $meta = [
+            'company' => 'Pulsia',
+            'province' => (string)($province->name ?? ''),
+            'zone_id' => $zoneId,
+            'generated_at' => now()->format('Y-m-d H:i'),
+        ];
+
+        $pdf = Pdf::loadView('exports.best_plan', [
+            'best' => $best,
+            'avg' => $avg,
+            'meta' => $meta,
+        ])->setPaper('a4', 'portrait');
+
+        $filename = 'best_plan_' . date('Y-m-d_H-i') . '.pdf';
+        return $pdf->download($filename);
     }
 
     // ======================
@@ -314,7 +380,7 @@ class ExportController extends Controller
 
     private function num2Format($sheet, string $range, string $suffix = ''): void
     {
-        $fmt = $suffix ? '#,##0.00" '.$suffix.'"' : '#,##0.00';
+        $fmt = $suffix ? '#,##0.00" ' . $suffix . '"' : '#,##0.00';
         $sheet->getStyle($range)->getNumberFormat()->setFormatCode($fmt);
     }
 }

@@ -15,4 +15,5 @@ Route::get('/box-types', [BoxTypeController::class, 'index']);
 Route::put('/box-types/{id}', [BoxTypeController::class, 'update']);
 
 Route::post('/export/best-plan', [ExportController::class, 'bestPlan']);
+Route::post('/export/best-plan-pdf', [ExportController::class, 'bestPlanPdf']);
 

@@ -429,6 +429,83 @@ export default function Index({ result }) {
     }
   };
 
+  const exportBestPlanPdf = async () => {
+    if (!canSubmit || exporting) return;
+
+    setExporting(true);
+
+    try {
+      const payload = {
+        province_id: data.province_id,
+        tower: Number(data.tower ?? 0),
+        laptop: Number(data.laptop ?? 0),
+        mini_pc: Number(data.mini_pc ?? 0),
+        allow_separators: !!data.allow_separators,
+        pallet_mode: data.pallet_mode,
+        pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
+      };
+
+      const res = await fetch("/api/export/best-plan-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Si usas CSRF en /api, descomenta esto:
+          // "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        let msg = "No se pudo exportar el PDF";
+        try {
+          // puede venir JSON (422) o texto/html
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            const j = await res.json();
+            msg = j?.message || msg;
+          } else {
+            const t = await res.text();
+            if (t) msg = t;
+          }
+        } catch (_) { }
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+
+      // Intentar sacar filename del header Content-Disposition
+      const disposition = res.headers.get("content-disposition") || "";
+      let filename = "best_plan.pdf";
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="([^"]+)"/i);
+      if (match) {
+        filename = decodeURIComponent(match[1] || match[2] || filename);
+      } else {
+        // fallback con timestamp
+        const ts = new Date()
+          .toISOString()
+          .slice(0, 16)
+          .replace("T", "_")
+          .replace(":", "-");
+        filename = `best_plan_${ts}.pdf`;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "Error exportando PDF");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+
   const manualOk = data.pallet_mode !== "manual" || data.pallet_type_codes.length > 0;
 
   const canSubmit =
@@ -1098,10 +1175,44 @@ export default function Index({ result }) {
                   </div>
                 </details>
               )}
+              <div className="mt-24 flex items-end justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={exportBestPlanPdf}
+                  disabled={!canSubmit || exporting}
+                  className={[
+                    "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-soft transition",
+                    "border border-brand-200 bg-brand-50 text-brand-900",
+                    "hover:bg-brand-100",
+                    "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-white",
+                    "active:translate-y-[1px]",
+                    "disabled:cursor-not-allowed disabled:opacity-60",
+                  ].join(" ")}
+                >
+                  {exporting ? "Exportando…" : "Exportar PDF"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={exportBestPlanExcel}
+                  disabled={!canSubmit || exporting}
+                  className={[
+                    "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-soft transition",
+                    "bg-ink-900 text-white",
+                    "hover:bg-ink-800",
+                    "focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-white",
+                    "active:translate-y-[1px]",
+                    "disabled:cursor-not-allowed disabled:opacity-60",
+                  ].join(" ")}
+                >
+                  {exporting ? "Exportando…" : "Exportar Excel"}
+                </button>
+              </div>
+
             </div>
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
-          )}           
+          )}
         </Card>
       </div>
       {boxModalOpen && (
