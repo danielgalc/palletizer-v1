@@ -59,12 +59,54 @@ function fmtNum(v) {
   return String(n);
 }
 
+function pricePerPallet(plan) {
+  if (!plan) return null;
+
+  // Si viene un €/pallet directo (planes mono-tipo), úsalo
+  if (plan.price_per_pallet !== null && plan.price_per_pallet !== undefined) {
+    const v = Number(plan.price_per_pallet);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  // Si es mixto (o no viene price_per_pallet), usa media: total / pallets
+  const total = Number(plan.total_price);
+  const count = Number(plan.pallet_count);
+
+  if (!Number.isFinite(total) || !Number.isFinite(count) || count <= 0) return null;
+
+  return total / count;
+}
+
+/* Desglose para planes mixtos: €/pallet por tipo */
+
+/* function mixedBreakdownSub(plan) {
+  const types = plan?.metrics?.types;
+  const costs = plan?.metrics?.cost_breakdown;
+
+  if (!types || !costs) return null;
+
+  // Ej: "MQ: 1 (58.11€) · HP: 1 (58.11€)"
+  return Object.entries(types)
+    .map(([code, count]) => {
+      const c = Number(costs?.[code]);
+      const n = Number(count);
+      if (!Number.isFinite(c) || !Number.isFinite(n) || n <= 0) {
+        return `${code}: ${count}`;
+      }
+      const per = c / n;
+      return `${code}: ${count} (${per.toFixed(2)}€)`;
+    })
+    .join(" · ");
+} */
+
+
+
 export default function Index({ result }) {
   const { data, setData, post, processing, errors } = useForm({
     province_id: null,
-    mini_pc: null,
-    tower: null,
-    laptop: null,
+    mini_pc: 0,
+    tower: 0,
+    laptop: 0,
     allow_separators: true,
 
     pallet_mode: "auto",
@@ -334,18 +376,22 @@ export default function Index({ result }) {
   const best = result?.plan?.best || null;
   const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
   const metrics = best?.metrics || null;
+  const recommendations = Array.isArray(result?.plan?.recommendations)
+    ? result.plan.recommendations
+    : [];
+
 
   const palletMeta = metrics?.pallet || null;
   const perType = metrics?.per_type || metrics?.box_info || null;
 
   const [boxTypesDirtyNotice, setBoxTypesDirtyNotice] = useState(false);
 
-  const pricePerPallet =
-    best?.price_per_pallet !== null && best?.price_per_pallet !== undefined
-      ? best.price_per_pallet
-      : (Number(best?.total_price) && Number(best?.pallet_count))
-        ? Number(best.total_price) / Number(best.pallet_count)
-        : null;
+  /* const pricePerPallet =
+     best?.price_per_pallet !== null && best?.price_per_pallet !== undefined
+       ? best.price_per_pallet
+       : (Number(best?.total_price) && Number(best?.pallet_count))
+         ? Number(best.total_price) / Number(best.pallet_count)
+         : null; */
 
   // Avisos
   const warnings = Array.isArray(best?.warnings) ? best.warnings : [];
@@ -700,7 +746,17 @@ export default function Index({ result }) {
               )}
               <div className="grid gap-3 sm:grid-cols-3">
                 <Stat label="Pallets" value={fmtNum(best.pallet_count)} />
-                <Stat label="€/pallet" value={fmtEUR(pricePerPallet)} />
+                {/* Sin desglose en caso plan mixto */}
+                <Stat label="€/pallet" value={fmtEUR(pricePerPallet(best))} />
+
+                {/* Con desglose en caso plan mixto */}
+                {/**
+                 * <Stat
+                      label="€/pallet"
+                      value={fmtEUR(pricePerPallet(best))}
+                      sub={best?.metrics?.mixed ? mixedBreakdownSub(best) : null}
+                    />
+                 */}
                 <Stat label="Total" value={fmtEUR(best.total_price)} />
               </div>
 
@@ -710,6 +766,36 @@ export default function Index({ result }) {
                   Destino: {result.province} · Zona {result.zone_id}
                 </div>
               </div>
+
+              {/* RECOMENDACIONES */}
+              {recommendations.length > 0 && (
+                <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
+                  <div className="text-sm font-extrabold text-ink-900">Recomendaciones</div>
+
+                  <div className="mt-2 space-y-2">
+                    {recommendations.map((r, idx) => (
+                      <div key={idx} className="rounded-xl bg-white p-3 ring-1 ring-yellow-200">
+                        <div className="text-sm font-semibold text-ink-800">{r.message}</div>
+
+                        <div className="mt-1 text-xs text-ink-600">
+                          Diferencia: <b>{Number(r.delta_pct).toFixed(2)}%</b> ·
+                          Best: <b>{fmtEUR(r.best_total)}</b> ·
+                          Alt: <b>{fmtEUR(r.alt_total)}</b>
+                          {r?.alt?.pallet_count !== undefined ? (
+                            <>
+                              {" "}· Pallets alt: <b>{fmtNum(r.alt.pallet_count)}</b>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-2 text-xs text-ink-600">
+                    Sugerencia: si la diferencia es pequeña, a veces compensa por facilidad de montaje o para evitar pallets muy vacíos.
+                  </div>
+                </div>
+              )}
 
               {/* Distribución */}
               {Array.isArray(best.pallets) && best.pallets.length > 0 && (
@@ -772,112 +858,112 @@ export default function Index({ result }) {
               {/* MÉTRICAS (bonitas) */}
 
               {metrics && (() => {
-                  const isMixed = !!metrics?.mixed;
-                  const mixTypes = metrics?.types || null;
-                  const mixCosts = metrics?.cost_breakdown || null;
-                  return (
-                <details className="rounded-xl border border-ink-100 p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-ink-800">
-                    Métricas de cálculo
-                  </summary>
+                const isMixed = !!metrics?.mixed;
+                const mixTypes = metrics?.types || null;
+                const mixCosts = metrics?.cost_breakdown || null;
+                return (
+                  <details className="rounded-xl border border-ink-100 p-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-ink-800">
+                      Métricas de cálculo
+                    </summary>
 
 
-                  <div className="mt-4 space-y-4">
-                    {/* Ficha del pallet */}
-                    {palletMeta && (
-                      <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
-                        <div className="text-sm font-extrabold text-ink-900">Pallet (límites)</div>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                          <Stat label="L (cm)" value={fmtNum(palletMeta.L_cm ?? palletMeta.L)} />
-                          <Stat label="W (cm)" value={fmtNum(palletMeta.W_cm ?? palletMeta.W)} />
-                          <Stat label="H máx (cm)" value={fmtNum(palletMeta.H_cm ?? palletMeta.H)} />
-                          <Stat label="Kg máx" value={fmtNum(palletMeta.max_kg ?? palletMeta.kg)} />
+                    <div className="mt-4 space-y-4">
+                      {/* Ficha del pallet */}
+                      {palletMeta && (
+                        <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                          <div className="text-sm font-extrabold text-ink-900">Pallet (límites)</div>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                            <Stat label="L (cm)" value={fmtNum(palletMeta.L_cm ?? palletMeta.L)} />
+                            <Stat label="W (cm)" value={fmtNum(palletMeta.W_cm ?? palletMeta.W)} />
+                            <Stat label="H máx (cm)" value={fmtNum(palletMeta.H_cm ?? palletMeta.H)} />
+                            <Stat label="Kg máx" value={fmtNum(palletMeta.max_kg ?? palletMeta.kg)} />
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {isMixed && (
-                      <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
-                        <div className="text-sm font-extrabold text-ink-900">Plan mixto</div>
+                      {isMixed && (
+                        <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                          <div className="text-sm font-extrabold text-ink-900">Plan mixto</div>
 
-                        {mixTypes && (
+                          {mixTypes && (
+                            <div className="mt-3 overflow-x-auto">
+                              <table className="min-w-[420px] w-full border-separate border-spacing-0">
+                                <thead>
+                                  <tr className="text-left text-xs text-ink-500">
+                                    <th className="py-2 pr-3">Tipo</th>
+                                    <th className="py-2 pr-3">Pallets</th>
+                                    <th className="py-2 pr-3">Coste</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="text-sm text-ink-800">
+                                  {Object.entries(mixTypes).map(([code, count]) => (
+                                    <tr key={code} className="border-t border-ink-100">
+                                      <td className="py-2 pr-3 font-semibold">{code}</td>
+                                      <td className="py-2 pr-3">{count}</td>
+                                      <td className="py-2 pr-3">{fmtEUR(mixCosts?.[code])}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          <div className="mt-3 text-xs text-ink-500">
+                            Nota: en planes mixtos el “€/pallet” mostrado es el promedio (total / nº pallets).
+                          </div>
+                        </div>
+                      )}
+
+
+                      {/* Datos por tipo */}
+                      {perType && (
+                        <div className="rounded-xl border border-ink-100 p-4">
+                          <div className="text-sm font-extrabold text-ink-900">Cajas por tipo</div>
                           <div className="mt-3 overflow-x-auto">
-                            <table className="min-w-[420px] w-full border-separate border-spacing-0">
+                            <table className="min-w-[520px] w-full border-separate border-spacing-0">
                               <thead>
                                 <tr className="text-left text-xs text-ink-500">
                                   <th className="py-2 pr-3">Tipo</th>
-                                  <th className="py-2 pr-3">Pallets</th>
-                                  <th className="py-2 pr-3">Coste</th>
+                                  <th className="py-2 pr-3">Cajas/capa</th>
+                                  <th className="py-2 pr-3">Altura (cm)</th>
+                                  <th className="py-2 pr-3">Peso/caja (kg)</th>
                                 </tr>
                               </thead>
                               <tbody className="text-sm text-ink-800">
-                                {Object.entries(mixTypes).map(([code, count]) => (
-                                  <tr key={code} className="border-t border-ink-100">
-                                    <td className="py-2 pr-3 font-semibold">{code}</td>
-                                    <td className="py-2 pr-3">{count}</td>
-                                    <td className="py-2 pr-3">{fmtEUR(mixCosts?.[code])}</td>
-                                  </tr>
-                                ))}
+                                {["tower", "laptop", "mini_pc"].map((code) => {
+                                  const t = perType?.[code];
+                                  if (!t) return null;
+                                  return (
+                                    <tr key={code} className="border-t border-ink-100">
+                                      <td className="py-2 pr-3 font-semibold">
+                                        {code === "tower"
+                                          ? "Torres"
+                                          : code === "laptop"
+                                            ? "Portátiles"
+                                            : "Mini PCs"}
+                                      </td>
+                                      <td className="py-2 pr-3">{fmtNum(t.per_layer)}</td>
+                                      <td className="py-2 pr-3">{fmtNum(t.height_cm)}</td>
+                                      <td className="py-2 pr-3">{fmtNum(t.weight_kg)}</td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
-                        )}
-
-                        <div className="mt-3 text-xs text-ink-500">
-                          Nota: en planes mixtos el “€/pallet” mostrado es el promedio (total / nº pallets).
                         </div>
-                      </div>
-                    )}
+                      )}
 
-
-                    {/* Datos por tipo */}
-                    {perType && (
-                      <div className="rounded-xl border border-ink-100 p-4">
-                        <div className="text-sm font-extrabold text-ink-900">Cajas por tipo</div>
-                        <div className="mt-3 overflow-x-auto">
-                          <table className="min-w-[520px] w-full border-separate border-spacing-0">
-                            <thead>
-                              <tr className="text-left text-xs text-ink-500">
-                                <th className="py-2 pr-3">Tipo</th>
-                                <th className="py-2 pr-3">Cajas/capa</th>
-                                <th className="py-2 pr-3">Altura (cm)</th>
-                                <th className="py-2 pr-3">Peso/caja (kg)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-sm text-ink-800">
-                              {["tower", "laptop", "mini_pc"].map((code) => {
-                                const t = perType?.[code];
-                                if (!t) return null;
-                                return (
-                                  <tr key={code} className="border-t border-ink-100">
-                                    <td className="py-2 pr-3 font-semibold">
-                                      {code === "tower"
-                                        ? "Torres"
-                                        : code === "laptop"
-                                          ? "Portátiles"
-                                          : "Mini PCs"}
-                                    </td>
-                                    <td className="py-2 pr-3">{fmtNum(t.per_layer)}</td>
-                                    <td className="py-2 pr-3">{fmtNum(t.height_cm)}</td>
-                                    <td className="py-2 pr-3">{fmtNum(t.weight_kg)}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                      {/* Nota */}
+                      {metrics?.note && (
+                        <div className="text-xs text-ink-500">
+                          <b>Nota:</b> {metrics.note}
                         </div>
-                      </div>
-                    )}
-
-                    {/* Nota */}
-                    {metrics?.note && (
-                      <div className="text-xs text-ink-500">
-                        <b>Nota:</b> {metrics.note}
-                      </div>
-                    )}
-                  </div>
-                </details>
-                  );
+                      )}
+                    </div>
+                  </details>
+                );
               })()}
 
               {/* ALTERNATIVAS (tabla) */}
@@ -902,7 +988,29 @@ export default function Index({ result }) {
                           <tr key={idx} className="border-t border-ink-100">
                             <td className="py-2 pr-3 font-semibold">{a.pallet_type_name}</td>
                             <td className="py-2 pr-3">{fmtNum(a.pallet_count)}</td>
-                            <td className="py-2 pr-3">{fmtEUR(a.price_per_pallet)}</td>
+                            <td className="py-2 pr-3">
+                              <div className="text-sm font-semibold text-ink-800">
+                                {fmtEUR(pricePerPallet(a))}
+                              </div>
+
+                              {/* Desglosa los costes en las alternativas */}
+                              
+                              {/* {(a.price_per_pallet === null || a.price_per_pallet === undefined) && (
+                                <div className="mt-1 text-xs text-ink-500">
+                                  {a.metrics?.cost_breakdown && (
+                                    <div className="mt-1">
+                                      {Object.entries(a.metrics.cost_breakdown).map(([code, cost]) => (
+                                        <div key={code}>
+                                          {code}: <b>{fmtEUR(cost)}</b>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}*/}
+                            </td>
+
+
                             <td className="py-2 pr-3">{fmtEUR(a.total_price)}</td>
                           </tr>
                         ))}

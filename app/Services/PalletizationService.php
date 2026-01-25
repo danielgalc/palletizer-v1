@@ -18,6 +18,7 @@ class PalletizationService
      * Calcula el mejor plan para una zona:
      * - Genera candidatos mono-tipo (solo un tipo de pallet por plan)
      * - Luego prueba combinaciones mixtas (2 tipos) en modo "auto mezcla"
+     * - (NUEVO) Genera recomendaciones comparando alternativas por % del total
      */
     public function calculateBestPlan(
         int $zoneId,
@@ -234,9 +235,17 @@ class PalletizationService
             return $ta <=> $tb;
         });
 
+        // (NUEVO) Guardamos best y alternatives para generar recomendaciones
+        $best = $candidates[0];
+        $alternatives = array_slice($candidates, 1, 5);
+
+        // (NUEVO) Recomendaciones por % del total
+        $recommendations = $this->buildRecommendations($best, $alternatives, 0.03); // 3%
+
         return [
-            'best' => $candidates[0],
-            'alternatives' => array_slice($candidates, 1, 5),
+            'best' => $best,
+            'alternatives' => $alternatives,
+            'recommendations' => $recommendations, // (NUEVO)
         ];
     }
 
@@ -648,6 +657,101 @@ class PalletizationService
         }
 
         return $warnings;
+    }
+
+    /**
+     * (NUEVO)
+     * Genera recomendaciones comparando alternativas por % del total.
+     *
+     * MVP:
+     * - Si best tiene warning underutilized_last_pallet
+     * - y alguna alternativa dentro del % elimina ese warning o reduce nº pallets
+     */
+    private function buildRecommendations(array $best, array $alternatives, float $maxDeltaPct = 0.03): array
+    {
+        $recs = [];
+
+        $bestTotal = (float)($best['total_price'] ?? 0);
+        if ($bestTotal <= 0) return $recs;
+
+        $bestPallets = (int)($best['pallet_count'] ?? 0);
+        $bestHasUnderutilized = $this->hasWarning($best, 'underutilized_last_pallet');
+
+        foreach ($alternatives as $alt) {
+            $altTotal = (float)($alt['total_price'] ?? 0);
+            if ($altTotal <= 0) continue;
+
+            $deltaPct = ($altTotal - $bestTotal) / $bestTotal;
+
+            // Solo alternativas ligeramente más caras (o igual)
+            if ($deltaPct < -0.00001) continue;
+            if ($deltaPct > $maxDeltaPct) continue;
+
+            $altPallets = (int)($alt['pallet_count'] ?? 0);
+            $altHasUnderutilized = $this->hasWarning($alt, 'underutilized_last_pallet');
+
+            $improvesPalletCount = $altPallets > 0 && $altPallets < $bestPallets;
+            $removesUnderutilized = $bestHasUnderutilized && !$altHasUnderutilized;
+
+            if ($improvesPalletCount || $removesUnderutilized) {
+                $recs[] = [
+                    'type' => 'near_optimal_alternative',
+                    'message' => $this->buildRecommendationMessage($best, $alt, $deltaPct, $improvesPalletCount, $removesUnderutilized),
+                    'delta_pct' => round($deltaPct * 100, 2),
+                    'best_total' => round($bestTotal, 2),
+                    'alt_total' => round($altTotal, 2),
+                    'alt' => [
+                        'pallet_type_name' => $alt['pallet_type_name'] ?? '',
+                        'pallet_count' => $altPallets,
+                    ],
+                ];
+            }
+        }
+
+        return $recs;
+    }
+
+    /**
+     * (NUEVO) Comprueba si un candidato incluye un warning por type.
+     */
+    private function hasWarning(array $candidate, string $warningType): bool
+    {
+        $warnings = $candidate['warnings'] ?? [];
+        if (!is_array($warnings)) return false;
+
+        foreach ($warnings as $w) {
+            if (($w['type'] ?? null) === $warningType) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * (NUEVO) Genera un texto “humano” para la recomendación.
+     */
+    private function buildRecommendationMessage(
+        array $best,
+        array $alt,
+        float $deltaPct,
+        bool $improvesPalletCount,
+        bool $removesUnderutilized
+    ): string {
+        $pct = round($deltaPct * 100, 2);
+
+        $parts = [];
+        $parts[] = "Alternativa +{$pct}%";
+
+        if ($improvesPalletCount) {
+            $parts[] = "reduce pallets";
+        }
+
+        if ($removesUnderutilized) {
+            $parts[] = "evita el último pallet muy vacío";
+        }
+
+        $altName = $alt['pallet_type_name'] ?? 'alternativa';
+        return implode(" · ", $parts) . " → {$altName}";
     }
 
     /**
