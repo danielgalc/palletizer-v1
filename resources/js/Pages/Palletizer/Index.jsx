@@ -94,6 +94,8 @@ export default function Index({ result }) {
   const [savingBoxById, setSavingBoxById] = useState({});
   const [boxMsgById, setBoxMsgById] = useState({});
 
+
+
   const fetchBoxTypes = async () => {
     setLoadingBoxTypes(true);
     setBoxTypesError(null);
@@ -332,12 +334,15 @@ export default function Index({ result }) {
   const best = result?.plan?.best || null;
   const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
   const metrics = best?.metrics || null;
-
+  
   const palletMeta = metrics?.pallet || null;
   const perType = metrics?.per_type || metrics?.box_info || null;
-
+  
   const [boxTypesDirtyNotice, setBoxTypesDirtyNotice] = useState(false);
-
+  
+  // Avisos
+  const warnings = Array.isArray(best?.warnings) ? best.warnings : [];
+  
   return (
     <AppLayout title="Palletizer">
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
@@ -669,6 +674,23 @@ export default function Index({ result }) {
             </div>
           ) : best ? (
             <div className="mt-4 space-y-4">
+              {warnings.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <div className="font-extrabold">¡Atención!</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                    {warnings.map((w, i) => (
+                      <li key={i}>
+                        {w.message}
+                        {w?.details?.boxes !== undefined && (
+                          <span className="text-amber-800">
+                            {" "} (último pallet: {w.details.boxes} cajas)
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-3">
                 <Stat label="Pallets" value={fmtNum(best.pallet_count)} />
                 <Stat label="€/pallet" value={fmtEUR(best.price_per_pallet)} />

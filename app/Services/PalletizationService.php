@@ -21,6 +21,7 @@ class PalletizationService
 
         $candidates = [];
 
+
         foreach ($palletTypes as $palletType) {
             $sim = $this->simulatePackingForPalletType($palletType, $boxTypes, $items, $allowSeparators);
 
@@ -55,6 +56,7 @@ class PalletizationService
                 'total_price' => $totalPrice,
                 'pallets' => $sim['pallets'],
                 'metrics' => $sim['metrics'],
+                'warnings' => $sim['warnings'] ?? [],
             ];
         }
 
@@ -203,11 +205,22 @@ class PalletizationService
             ];
         }
 
+        // Añadimos métricas de utilización por pallet
+        $utilizations = [];
+        foreach ($pallets as $i => $p) {
+            $utilizations[] = [
+                'pallet_number' => $i + 1,
+                ...$this->palletUtilization($p, $palletMaxH, $palletMaxKg),
+            ];
+        }
+
+        $warnings = $this->buildUnderutilizedWarnings($pallets, $palletMaxH, $palletMaxKg);
+
         return [
             'pallet_count' => count($pallets),
             'pallets' => $pallets,
+            'warnings' => $warnings,
             'metrics' => [
-                'note' => 'Capas planas: se rellena una capa incompleta con otros tipos SOLO si mantiene plano mediante separador. Huecos solo en última capa.',
                 'pallet' => [
                     'L_cm' => $palletL,
                     'W_cm' => $palletW,
@@ -215,6 +228,8 @@ class PalletizationService
                     'max_kg' => $palletMaxKg,
                 ],
                 'per_type' => $info,
+                'utilizations' => $utilizations,
+                'note' => 'Simulación por capas reales. Avisos si el último pallet está infrautilizado.',
             ],
         ];
     }
@@ -377,5 +392,62 @@ class PalletizationService
         $a = intdiv($palletL, $boxL) * intdiv($palletW, $boxW);
         $b = intdiv($palletL, $boxW) * intdiv($palletW, $boxL);
         return max($a, $b);
+    }
+
+    // Calcula % de utilización del pallet (0..1) usando altura y peso.
+    // Cogemos el MAYOR de ambos, porque si vas al límite de peso, aunque falte altura, el pallet está "lleno" a efectos reales.
+    private function palletUtilization(array $pallet, int $palletMaxH, float $palletMaxKg): array
+    {
+        $heightLeft = (int)($pallet['remaining_capacity']['height_cm_left'] ?? $palletMaxH);
+        $weightLeft = (float)($pallet['remaining_capacity']['weight_kg_left'] ?? $palletMaxKg);
+
+        $usedH = max(0, $palletMaxH - $heightLeft);
+        $usedKg = max(0.0, $palletMaxKg - $weightLeft);
+
+        $uH = $palletMaxH > 0 ? ($usedH / $palletMaxH) : 0.0;
+        $uW = $palletMaxKg > 0 ? ($usedKg / $palletMaxKg) : 0.0;
+
+        $u = max($uH, $uW);
+
+        return [
+            'utilization' => round($u, 3),
+            'utilization_height' => round($uH, 3),
+            'utilization_weight' => round($uW, 3),
+            'used_height_cm' => $usedH,
+            'used_weight_kg' => round($usedKg, 2),
+        ];
+    }
+
+    private function buildUnderutilizedWarnings(array $pallets, int $palletMaxH, float $palletMaxKg): array
+    {
+        if (count($pallets) === 0) return [];
+
+        $warnings = [];
+
+        // Umbrales (ajustables)
+        $lastPalletThreshold = 0.25; // 25% o menos -> aviso fuerte
+        $veryLowBoxesThreshold = 8;  // si el último pallet lleva poquísimas cajas
+
+        $lastIdx = count($pallets) - 1;
+        $last = $pallets[$lastIdx];
+
+        $u = $this->palletUtilization($last, $palletMaxH, $palletMaxKg);
+
+        $boxes = (int)($last['tower'] ?? 0) + (int)($last['laptop'] ?? 0) + (int)($last['mini_pc'] ?? 0);
+
+        if ($u['utilization'] <= $lastPalletThreshold || $boxes <= $veryLowBoxesThreshold) {
+            $warnings[] = [
+                'type' => 'underutilized_last_pallet',
+                'severity' => 'warning',
+                'message' => 'El último pallet está muy vacío. Quizá compense esperar y consolidarlo con otro envío o revisar alternativas.',
+                'details' => [
+                    'last_pallet_index' => $lastIdx + 1,
+                    'utilization' => $u,
+                    'boxes' => $boxes,
+                ],
+            ];
+        }
+
+        return $warnings;
     }
 }
