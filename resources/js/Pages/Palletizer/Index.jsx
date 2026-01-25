@@ -132,6 +132,7 @@ export default function Index({ result }) {
     const id = row.id;
     setSavingBoxById((p) => ({ ...p, [id]: true }));
     setBoxMsgById((p) => ({ ...p, [id]: null }));
+    setBoxTypesDirtyNotice(true);
 
     const payload = {
       name: row.name,
@@ -306,6 +307,7 @@ export default function Index({ result }) {
 
   const submit = (e) => {
     e.preventDefault();
+    setBoxTypesDirtyNotice(false);
 
     try {
       if (typeof route === "function") {
@@ -333,6 +335,8 @@ export default function Index({ result }) {
 
   const palletMeta = metrics?.pallet || null;
   const perType = metrics?.per_type || metrics?.box_info || null;
+
+  const [boxTypesDirtyNotice, setBoxTypesDirtyNotice] = useState(false);
 
   return (
     <AppLayout title="Palletizer">
@@ -547,7 +551,7 @@ export default function Index({ result }) {
                   <button
                     type="button"
                     onClick={openBoxTypesModal}
-                    className="inline-flex w-auto items-center justify-center rounded- border border-ink-200 bg-yellow-400 p-1.5 text-xs font-extrabold text-ink-800 hover:bg-yellow-500"
+                    className="inline-flex w-auto items-center justify-center rounded-lg border border-ink-200 bg-yellow-400 p-1.5 text-xs font-extrabold text-ink-800 hover:bg-yellow-500"
                   >
                     Configurar cajas
                   </button>
@@ -624,7 +628,11 @@ export default function Index({ result }) {
                 />
               </Field>
             </div>
-
+            {boxTypesDirtyNotice && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                Has modificado la configuración de cajas. Pulsa <b>Calcular</b> para recalcular con los nuevos datos.
+              </div>
+            )}
             <button
               type="submit"
               disabled={!canSubmit}
@@ -906,6 +914,19 @@ export default function Index({ result }) {
                         const saving = !!savingBoxById[b.id];
                         const msg = boxMsgById[b.id];
 
+                        const L = Number(b.length_cm);
+                        const W = Number(b.width_cm);
+                        const H = Number(b.height_cm);
+                        const KG = Number(b.weight_kg);
+
+                        const rowValid =
+                          b.name && b.name.trim().length > 0 &&
+                          Number.isFinite(L) && L > 0 &&
+                          Number.isFinite(W) && W > 0 &&
+                          Number.isFinite(H) && H > 0 &&
+                          Number.isFinite(KG) && KG > 0;
+
+
                         return (
                           <tr key={b.id} className="border-t border-ink-100">
                             <td className="py-3 pr-3 font-semibold">{b.code}</td>
@@ -967,11 +988,16 @@ export default function Index({ result }) {
                                   <span className="text-xs font-extrabold text-red-600">{msg.text}</span>
                                 ) : null}
 
+                                {!rowValid && (
+                                  <div className="mt-1 text-xs font-semibold text-red-600">
+                                    Revisa nombre, medidas y peso (deben ser &gt; 0).
+                                  </div>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => saveBoxType(b)}
-                                  disabled={saving}
-                                  className="rounded-xl bg-ink-900 px-3 py-2 text-xs font-extrabold text-white shadow-soft transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={!rowValid || saving}
+                                  className="rounded-xl bg-ink-900 px-3 py-2 text-xs font-extrabold text-white shadow-soft transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                   {saving ? "Guardando…" : "Guardar"}
                                 </button>
