@@ -1101,26 +1101,7 @@ export default function Index({ result }) {
             </div>
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
-          )}
-
-          <div className="mt-24 flex items-end justify-end gap-3 -p-1">
-            <button
-              type="button"
-              onClick={exportBestPlanExcel}
-              disabled={!canSubmit || exporting}
-              className="inline-flex w-auto items-center justify-center rounded-xl border border-ink-200 bg-red-500 px-4 py-2.5 text-sm font-extrabold text-ink-900 shadow-soft transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {exporting ? "Exportando…" : "Exportar PDF"}
-            </button>
-            <button
-              type="button"
-              onClick={exportBestPlanExcel}
-              disabled={!canSubmit || exporting}
-              className="inline-flex w-auto items-center justify-center rounded-xl border border-ink-200 bg-green-500 px-4 py-2.5 text-sm font-extrabold text-ink-900 shadow-soft transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {exporting ? "Exportando…" : "Exportar Excel"}
-            </button>
-          </div>
+          )}           
         </Card>
       </div>
       {boxModalOpen && (
