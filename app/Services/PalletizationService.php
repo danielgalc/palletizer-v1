@@ -103,8 +103,8 @@ class PalletizationService
         // ==========================================
         // 2) MEZCLA (AUTO): COMBINACIONES DE 2 TIPOS
         // ==========================================
-        // Nota: aquí asumimos que el tramo de tarifas se aplica por TIPO (según tu schema `rates`).
-        // Es decir, si usas 2 Light y 3 Quarter, se evalúan tramos por separado.
+        // Aquí asumimos que el tramo de tarifas se aplica por TIPO.
+        // Es decir, si se usan 2 Light y 3 Quarter, se evalúan tramos por separado.
 
         // Ordenamos los candidatos mono-tipo por precio para escoger "los mejores" tipos
         $monoCandidates = array_values($candidates);
