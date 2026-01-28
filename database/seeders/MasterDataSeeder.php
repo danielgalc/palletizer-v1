@@ -58,7 +58,7 @@ class MasterDataSeeder extends Seeder
             4 => ['Albacete','Toledo'],
             5 => ['Burgos','La Rioja','Segovia','Valladolid','Zaragoza'],
             6 => ['Álava','Avila','Cuenca','Huesca','León','Navarra','Palencia','Salamanca','Soria','Teruel','Valencia','Zamora'],
-            7 => ['Alicante','Asturia','Cantabria','Castellón','Guipuzcoa','Lérida','Tarragona','Vizcaya'],
+            7 => ['Alicante','Asturias','Cantabria','Castellón','Guipuzcoa','Lérida','Tarragona','Vizcaya'],
             8 => ['Barcelona','Cáceres'],
             9 => ['Coruña','Gerona','Lugo','Orense','Pontevedra'],
             // 10 es Portugal resto CP (no es “provincia” española) -> lo dejamos fuera del seeder de provinces

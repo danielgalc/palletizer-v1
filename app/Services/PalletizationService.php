@@ -18,7 +18,7 @@ class PalletizationService
      * Calcula el mejor plan para una zona:
      * - Genera candidatos mono-tipo (solo un tipo de pallet por plan)
      * - Luego prueba combinaciones mixtas (2 tipos) en modo "auto mezcla"
-     * - (NUEVO) Genera recomendaciones comparando alternativas por % del total
+     * - Genera recomendaciones comparando alternativas por % del total
      */
     public function calculateBestPlan(
         int $zoneId,
@@ -35,7 +35,7 @@ class PalletizationService
             $query->whereIn('code', $allowedPalletTypeCodes);
         }
 
-        // IMPORTANT: $palletTypes aquí es una Collection (Illuminate\Support\Collection)
+        // $palletTypes aquí es una Collection (Illuminate\Support\Collection)
         $palletTypes = $query->get();
 
         $candidates = [];
@@ -123,7 +123,7 @@ class PalletizationService
         // Si hay al menos 2 tipos, probamos mezclas
         if (count($mixTypes) >= 2) {
 
-            // Heurística: máximo pallets por tipo en mezcla (para evitar explosión combinatoria)
+            // Máximo pallets por tipo en mezcla (para evitar explosión combinatoria)
             $maxPalletsPerTypeInMix = 3;
 
             for ($i = 0; $i < count($mixTypes); $i++) {
@@ -134,7 +134,6 @@ class PalletizationService
 
                     for ($aCount = 1; $aCount <= $maxPalletsPerTypeInMix; $aCount++) {
 
-                        // OJO: 4º param = allowSeparators, 5º = limitPallets
                         $simA = $this->simulatePackingForPalletType(
                             $typeA,
                             $boxTypes,
@@ -235,17 +234,17 @@ class PalletizationService
             return $ta <=> $tb;
         });
 
-        // (NUEVO) Guardamos best y alternatives para generar recomendaciones
+        //  Guardamos best y alternatives para generar recomendaciones
         $best = $candidates[0];
         $alternatives = array_slice($candidates, 1, 5);
 
-        // (NUEVO) Recomendaciones por % del total
+        //  Recomendaciones por % del total
         $recommendations = $this->buildRecommendations($best, $alternatives, 0.03); // 3%
 
         return [
             'best' => $best,
             'alternatives' => $alternatives,
-            'recommendations' => $recommendations, // (NUEVO)
+            'recommendations' => $recommendations,
         ];
     }
 
@@ -660,10 +659,10 @@ class PalletizationService
     }
 
     /**
-     * (NUEVO)
+     * 
      * Genera recomendaciones comparando alternativas por % del total.
      *
-     * MVP:
+     * Criterios:
      * - Si best tiene warning underutilized_last_pallet
      * - y alguna alternativa dentro del % elimina ese warning o reduce nº pallets
      */
@@ -712,7 +711,7 @@ class PalletizationService
     }
 
     /**
-     * (NUEVO) Comprueba si un candidato incluye un warning por type.
+     * Comprueba si un candidato incluye un warning por type.
      */
     private function hasWarning(array $candidate, string $warningType): bool
     {

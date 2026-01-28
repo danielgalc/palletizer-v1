@@ -140,9 +140,6 @@ export default function Index({ result }) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
 
-
-
-
   const fetchBoxTypes = async () => {
     setLoadingBoxTypes(true);
     setBoxTypesError(null);
@@ -263,14 +260,6 @@ export default function Index({ result }) {
         if (cancelled) return;
         setProvinces(list);
         setLoadingProvinces(false);
-
-        /* const zaragoza = list.find((p) => normalize(p.name) === "zaragoza");
-         const initial = zaragoza || list[0];
- 
-         if (initial) {
-           setData("province_id", initial.id);
-           setQuery(initial.name);
-         } */
       })
       .catch((e) => {
         if (cancelled) return;
