@@ -5,12 +5,12 @@
 5. Creamos la base de datos en Laragon. Usuario: postgres - Contraseña: postgres - Puerto: 5432
 6. En el directorio del proyecto, copiamos el directorio .env.example y lo renombramos a .env. Modificamos los valores de DB para que coincidan con nuestra base de datos.
 
-    DB_CONNECTION=pgsql
-    DB_HOST=127.0.0.1
-    DB_PORT=5432
-    DB_DATABASE=postgres
-    DB_USERNAME=postgres
-    DB_PASSWORD=postgres
+  - DB_CONNECTION=pgsql
+  - DB_HOST=127.0.0.1
+  - DB_PORT=5432
+  - DB_DATABASE=postgres
+  - DB_USERNAME=postgres
+  - DB_PASSWORD=postgres
 
 Instalamos las dependencias y paquetes
 
