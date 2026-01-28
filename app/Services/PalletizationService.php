@@ -621,7 +621,6 @@ class PalletizationService
 
     /**
      * Aviso simple: último pallet infrautilizado.
-     * (Luego lo refinaremos para planes mixtos, si quieres.)
      */
     private function buildUnderutilizedWarnings(array $pallets, int $palletMaxH, float $palletMaxKg): array
     {
@@ -727,7 +726,7 @@ class PalletizationService
     }
 
     /**
-     * (NUEVO) Genera un texto “humano” para la recomendación.
+     * Genera un texto “humano” para la recomendación.
      */
     private function buildRecommendationMessage(
         array $best,

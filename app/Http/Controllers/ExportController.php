@@ -269,7 +269,6 @@ class ExportController extends Controller
     public function bestPlanPdf(Request $request, PalletizationService $service)
     {
         // Reutiliza la misma validación / resolución de zona / items que en bestPlan()
-        // (puedes copiar y pegar y luego refactorizamos en una función privada si quieres)
 
         $v = Validator::make($request->all(), [
             'province_id' => ['required', 'integer'],

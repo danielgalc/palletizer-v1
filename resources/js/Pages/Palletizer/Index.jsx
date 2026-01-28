@@ -438,7 +438,7 @@ export default function Index({ result }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Si usas CSRF en /api, descomenta esto:
+          // Si se usa CSRF en /api, descomentar esto:
           // "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
         },
         body: JSON.stringify(payload),
@@ -995,7 +995,7 @@ export default function Index({ result }) {
                 </details>
               )}
 
-              {/* MÉTRICAS (bonitas) */}
+              {/* MÉTRICAS */}
 
               {metrics && (() => {
                 const isMixed = !!metrics?.mixed;

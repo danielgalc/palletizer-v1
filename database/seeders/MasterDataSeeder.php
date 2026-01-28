@@ -10,7 +10,7 @@ class MasterDataSeeder extends Seeder
     public function run(): void
     {
         // -------------------------
-        // BOX TYPES (suposiciones iniciales)
+        // BOX TYPES (demo)
         // -------------------------
         DB::table('box_types')->upsert([
             ['code' => 'laptop',  'name' => 'Portátil', 'length_cm' => 40, 'width_cm' => 40, 'height_cm' => 12, 'weight_kg' => 4.00, 'created_at' => now(), 'updated_at' => now()],
@@ -18,8 +18,6 @@ class MasterDataSeeder extends Seeder
             ['code' => 'tower',   'name' => 'Torre oficina', 'length_cm' => 60, 'width_cm' => 30, 'height_cm' => 25, 'weight_kg' => 10.00, 'created_at' => now(), 'updated_at' => now()],
         ], ['code'], ['name','length_cm','width_cm','height_cm','weight_kg','updated_at']);
 
-        // -------------------------
-        // PALLET TYPES (según PDF; alturas/pesos como en tu versión actual)
         // -------------------------
         DB::table('pallet_types')->upsert([
             // Ojo: en el PDF hay mini-quarter y quarter; ambos con base 120x80 en el documento de ejemplo.
@@ -49,7 +47,6 @@ class MasterDataSeeder extends Seeder
 
         // -------------------------
         // PROVINCES por zona (tal y como aparecen en el PDF)
-        // Nota: seeding con nombres “tal cual”; luego añadiremos normalización de entrada del usuario.
         // -------------------------
         $zoneProvinces = [
             1 => ['Cádiz','Córdoba','Granada','Jaen','Málaga','Sevilla'],
