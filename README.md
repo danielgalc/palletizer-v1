@@ -1,6 +1,6 @@
 1. Instalar Laragon (https://laragon.org/)
 2. Descargar pgsql (https://www.enterprisedb.com/download-postgresql-binaries) 
-3. Acceder a User/laragon/bin y crear la carperta postgresql. Dentro descomprimir el zip y dejar el directorio pgsql
+3. Accedemos al directorio dónde hayamos instalado Laragon y luego al directorio bin, por ejemplo: C:/laragon/bin y creamos la carperta postgresql si no existe. Dentro descomprimir el zip que acabamos de descargar y dejar el directorio pgsql
 4. Habilitar el postgres en Laragon y la extension pgsql y pdosql. Menu > PHP > Extensions
 5. Creamos la base de datos en Laragon. Usuario: postgres - Contraseña: postgres - Puerto: 5432
 6. En el directorio del proyecto, copiamos el directorio .env.example y lo renombramos a .env. Modificamos los valores de DB para que coincidan con nuestra base de datos.
