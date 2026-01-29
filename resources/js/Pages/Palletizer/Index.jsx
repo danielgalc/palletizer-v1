@@ -77,33 +77,10 @@ function pricePerPallet(plan) {
   return total / count;
 }
 
-/* Desglose para planes mixtos: €/pallet por tipo */
-
-/* function mixedBreakdownSub(plan) {
-  const types = plan?.metrics?.types;
-  const costs = plan?.metrics?.cost_breakdown;
-
-  if (!types || !costs) return null;
-
-  // Ej: "MQ: 1 (58.11€) · HP: 1 (58.11€)"
-  return Object.entries(types)
-    .map(([code, count]) => {
-      const c = Number(costs?.[code]);
-      const n = Number(count);
-      if (!Number.isFinite(c) || !Number.isFinite(n) || n <= 0) {
-        return `${code}: ${count}`;
-      }
-      const per = c / n;
-      return `${code}: ${count} (${per.toFixed(2)}€)`;
-    })
-    .join(" · ");
-} */
-
-
-
 export default function Index({ result }) {
   const { data, setData, post, processing, errors } = useForm({
-    country_code: "ES",
+    // ✅ Opción A: obligar a seleccionar país
+    country_code: "",
     zone_id: null,
     province_id: null,
     mini_pc: 0,
@@ -151,6 +128,7 @@ export default function Index({ result }) {
   const [loadingZones, setLoadingZones] = useState(false);
   const [zonesError, setZonesError] = useState(null);
 
+  const [boxTypesDirtyNotice, setBoxTypesDirtyNotice] = useState(false);
 
   const fetchBoxTypes = async () => {
     setLoadingBoxTypes(true);
@@ -216,7 +194,7 @@ export default function Index({ result }) {
             const firstKey = Object.keys(data.errors)[0];
             if (firstKey) errText = data.errors[firstKey][0];
           }
-        } catch (_) { }
+        } catch (_) {}
         throw new Error(errText);
       }
 
@@ -229,7 +207,6 @@ export default function Index({ result }) {
       setSavingBoxById((p) => ({ ...p, [id]: false }));
     }
   };
-
 
   useEffect(() => {
     let cancelled = false;
@@ -364,7 +341,7 @@ export default function Index({ result }) {
         post(route("palletizer.calculate"), { preserveScroll: true });
         return;
       }
-    } catch (_) { }
+    } catch (_) {}
 
     post("/palletizer/calculate", { preserveScroll: true });
   };
@@ -374,7 +351,6 @@ export default function Index({ result }) {
     setExportError(null);
 
     try {
-      // Validación mínima (misma lógica que canSubmit)
       if (!canSubmit) {
         throw new Error("Completa el formulario antes de exportar.");
       }
@@ -398,18 +374,16 @@ export default function Index({ result }) {
       });
 
       if (!res.ok) {
-        // Intentar leer mensaje de error JSON
         let msg = "No se pudo exportar.";
         try {
           const j = await res.json();
           if (j?.message) msg = j.message;
-        } catch (_) { }
+        } catch (_) {}
         throw new Error(msg);
       }
 
       const blob = await res.blob();
 
-      // Nombre sugerido desde backend (si viene)
       const contentDisposition = res.headers.get("content-disposition");
       let filename = "best_plan.xlsx";
       if (contentDisposition) {
@@ -439,6 +413,7 @@ export default function Index({ result }) {
 
     try {
       const payload = {
+        // (en PDF aún no ajustamos destino no-ES aquí; mantenemos como estaba)
         province_id: data.province_id,
         tower: Number(data.tower ?? 0),
         laptop: Number(data.laptop ?? 0),
@@ -450,18 +425,13 @@ export default function Index({ result }) {
 
       const res = await fetch("/api/export/best-plan-pdf", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Si se usa CSRF en /api, descomentar esto:
-          // "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         let msg = "No se pudo exportar el PDF";
         try {
-          // puede venir JSON (422) o texto/html
           const ct = res.headers.get("content-type") || "";
           if (ct.includes("application/json")) {
             const j = await res.json();
@@ -470,25 +440,19 @@ export default function Index({ result }) {
             const t = await res.text();
             if (t) msg = t;
           }
-        } catch (_) { }
+        } catch (_) {}
         throw new Error(msg);
       }
 
       const blob = await res.blob();
 
-      // Intentar sacar filename del header Content-Disposition
       const disposition = res.headers.get("content-disposition") || "";
       let filename = "best_plan.pdf";
       const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="([^"]+)"/i);
       if (match) {
         filename = decodeURIComponent(match[1] || match[2] || filename);
       } else {
-        // fallback con timestamp
-        const ts = new Date()
-          .toISOString()
-          .slice(0, 16)
-          .replace("T", "_")
-          .replace(":", "-");
+        const ts = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "-");
         filename = `best_plan_${ts}.pdf`;
       }
 
@@ -508,54 +472,43 @@ export default function Index({ result }) {
     }
   };
 
-
-
   const manualOk = data.pallet_mode !== "manual" || data.pallet_type_codes.length > 0;
 
+  const countrySelected = !!data.country_code;
   const isES = (data.country_code || "ES") === "ES";
 
-  const destinationOk = isES
-    ? (
-      !loadingProvinces &&
-      !provincesError &&
-      data.province_id !== null &&
-      provinces.some((p) => p.id === data.province_id)
-    )
-    : (
-      !loadingZones &&
-      !zonesError &&
-      data.zone_id !== null &&
-      zones.some((z) => z.id === data.zone_id)
-    );
+  // ✅ Opción A: destino solo es OK si hay país seleccionado
+  const destinationOk = countrySelected && (
+    isES
+      ? (
+          !loadingProvinces &&
+          !provincesError &&
+          data.province_id !== null &&
+          provinces.some((p) => p.id === data.province_id)
+        )
+      : (
+          !loadingZones &&
+          !zonesError &&
+          data.zone_id !== null &&
+          zones.some((z) => z.id === data.zone_id)
+        )
+  );
 
   const canSubmit =
     !processing &&
     !loadingCountries &&
     !countriesError &&
+    countrySelected &&
     manualOk &&
     destinationOk;
-
-
 
   const best = result?.plan?.best || null;
   const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
   const metrics = best?.metrics || null;
-  const recommendations = Array.isArray(result?.plan?.recommendations)
-    ? result.plan.recommendations
-    : [];
-
+  const recommendations = Array.isArray(result?.plan?.recommendations) ? result.plan.recommendations : [];
 
   const palletMeta = metrics?.pallet || null;
   const perType = metrics?.per_type || metrics?.box_info || null;
-
-  const [boxTypesDirtyNotice, setBoxTypesDirtyNotice] = useState(false);
-
-  /* const pricePerPallet =
-     best?.price_per_pallet !== null && best?.price_per_pallet !== undefined
-       ? best.price_per_pallet
-       : (Number(best?.total_price) && Number(best?.pallet_count))
-         ? Number(best.total_price) / Number(best.pallet_count)
-         : null; */
 
   // Avisos
   const warnings = Array.isArray(best?.warnings) ? best.warnings : [];
@@ -614,11 +567,13 @@ export default function Index({ result }) {
         setZonesError(e.message || "Error cargando zonas");
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.country_code]);
 
-
+  const destinationDisabled = !countrySelected;
 
   return (
     <AppLayout title="Palletizer">
@@ -637,7 +592,7 @@ export default function Index({ result }) {
           <form onSubmit={submit} className="mt-5 space-y-4">
             <Field label="País destino" error={errors.country_code}>
               <select
-                value={data.country_code}
+                value={data.country_code ?? ""}
                 disabled={loadingCountries || !!countriesError}
                 onChange={(e) => {
                   const cc = e.target.value;
@@ -652,11 +607,28 @@ export default function Index({ result }) {
                     setIsOpen(false);
                     setHighlightIndex(0);
                   }
+
+                  // Si selecciona placeholder vacío, resetea todo
+                  if (!cc) {
+                    setData("province_id", null);
+                    setData("zone_id", null);
+                    setQuery("");
+                    setIsOpen(false);
+                    setHighlightIndex(0);
+                    setZones([]);
+                  }
                 }}
                 className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
               >
+                {/* ✅ placeholder */}
+                <option value="" disabled>
+                  Selecciona país…
+                </option>
+
                 {loadingCountries ? (
-                  <option value="ES">Cargando…</option>
+                  <option value="" disabled>
+                    Cargando…
+                  </option>
                 ) : (
                   countries.map((c) => (
                     <option key={c.code} value={c.code}>
@@ -680,14 +652,16 @@ export default function Index({ result }) {
                 hint={
                   selectedProvinceObj?.zone_name
                     ? `Seleccionada: ${selectedProvinceObj.name} · ${selectedProvinceObj.zone_name}`
-                    : "Escribe para buscar (ej. Zara, Mad...)"
+                    : destinationDisabled
+                      ? "Selecciona primero un país."
+                      : "Escribe para buscar (ej. Zara, Mad...)"
                 }
                 error={errors.province_id}
               >
                 <div ref={containerRef} className="relative">
                   <input
                     value={query}
-                    disabled={loadingProvinces || !!provincesError}
+                    disabled={destinationDisabled || loadingProvinces || !!provincesError}
                     onChange={(e) => {
                       setQuery(e.target.value);
                       setIsOpen(true);
@@ -695,11 +669,17 @@ export default function Index({ result }) {
                     }}
                     onFocus={() => setIsOpen(true)}
                     onKeyDown={onKeyDown}
-                    placeholder={loadingProvinces ? "Cargando..." : "Buscar provincia..."}
+                    placeholder={
+                      destinationDisabled
+                        ? "Selecciona país primero…"
+                        : loadingProvinces
+                          ? "Cargando..."
+                          : "Buscar provincia..."
+                    }
                     className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
                   />
 
-                  {isOpen && !loadingProvinces && !provincesError && (
+                  {isOpen && !destinationDisabled && !loadingProvinces && !provincesError && (
                     <div className="absolute left-0 right-0 top-[42px] z-20 max-h-72 overflow-auto rounded-xl border border-ink-200 bg-white shadow-soft">
                       {filtered.length === 0 ? (
                         <div className="px-3 py-2 text-sm text-ink-500">Sin resultados.</div>
@@ -737,16 +717,18 @@ export default function Index({ result }) {
             ) : (
               <Field
                 label="Zona destino"
-                hint="Selecciona la zona para el país elegido"
+                hint={destinationDisabled ? "Selecciona primero un país." : "Selecciona la zona para el país elegido"}
                 error={errors.zone_id}
               >
                 <select
                   value={data.zone_id ?? ""}
-                  disabled={loadingZones || !!zonesError}
+                  disabled={destinationDisabled || loadingZones || !!zonesError}
                   onChange={(e) => setData("zone_id", e.target.value ? Number(e.target.value) : null)}
                   className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
                 >
-                  <option value="">{loadingZones ? "Cargando…" : "Selecciona zona…"}</option>
+                  <option value="">
+                    {destinationDisabled ? "Selecciona país primero…" : (loadingZones ? "Cargando…" : "Selecciona zona…")}
+                  </option>
                   {zones.map((z) => (
                     <option key={z.id} value={z.id}>
                       {z.name}
@@ -895,7 +877,7 @@ export default function Index({ result }) {
                   <div className="text-xs text-ink-500">
                     Valores usados para el cálculo
                   </div>
-                  {/* Botón para configurar cajas */}
+
                   <button
                     type="button"
                     onClick={openBoxTypesModal}
@@ -903,16 +885,6 @@ export default function Index({ result }) {
                   >
                     Configurar cajas
                   </button>
-
-                  {/* Botón actualizar */}
-
-                  {/*<button
-                    type="button"
-                    onClick={fetchBoxTypes}
-                    className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
-                  >
-                    Actualizar
-                  </button>*/}
                 </div>
 
                 {loadingBoxTypes ? (
@@ -976,11 +948,13 @@ export default function Index({ result }) {
                 />
               </Field>
             </div>
+
             {boxTypesDirtyNotice && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
                 Has modificado la configuración de cajas. Pulsa <b>Calcular</b> para recalcular con los nuevos datos.
               </div>
             )}
+
             <button
               type="submit"
               disabled={!canSubmit}
@@ -988,8 +962,6 @@ export default function Index({ result }) {
             >
               {processing ? "Calculando..." : "Calcular"}
             </button>
-
-            {/** Aqui estaba el boton Excel */}
 
             {exportError && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
@@ -1042,19 +1014,10 @@ export default function Index({ result }) {
                   </ul>
                 </div>
               )}
+
               <div className="grid gap-3 sm:grid-cols-3">
                 <Stat label="Pallets" value={fmtNum(best.pallet_count)} />
-                {/* Sin desglose en caso plan mixto */}
                 <Stat label="€/pallet" value={fmtEUR(pricePerPallet(best))} />
-
-                {/* Con desglose en caso plan mixto */}
-                {/**
-                 * <Stat
-                      label="€/pallet"
-                      value={fmtEUR(pricePerPallet(best))}
-                      sub={best?.metrics?.mixed ? mixedBreakdownSub(best) : null}
-                    />
-                 */}
                 <Stat label="Total" value={fmtEUR(best.total_price)} />
               </div>
 
@@ -1065,7 +1028,6 @@ export default function Index({ result }) {
                 </div>
               </div>
 
-              {/* RECOMENDACIONES */}
               {recommendations.length > 0 && (
                 <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
                   <div className="text-sm font-extrabold text-ink-900">Recomendaciones</div>
@@ -1095,7 +1057,6 @@ export default function Index({ result }) {
                 </div>
               )}
 
-              {/* Distribución */}
               {Array.isArray(best.pallets) && best.pallets.length > 0 && (
                 <details className="rounded-xl border border-ink-100 p-4">
                   <summary className="cursor-pointer text-sm font-semibold text-ink-800">
@@ -1153,8 +1114,6 @@ export default function Index({ result }) {
                 </details>
               )}
 
-              {/* MÉTRICAS */}
-
               {metrics && (() => {
                 const isMixed = !!metrics?.mixed;
                 const mixTypes = metrics?.types || null;
@@ -1165,9 +1124,7 @@ export default function Index({ result }) {
                       Métricas de cálculo
                     </summary>
 
-
                     <div className="mt-4 space-y-4">
-                      {/* Ficha del pallet */}
                       {palletMeta && (
                         <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
                           <div className="text-sm font-extrabold text-ink-900">Pallet (límites)</div>
@@ -1213,8 +1170,6 @@ export default function Index({ result }) {
                         </div>
                       )}
 
-
-                      {/* Datos por tipo */}
                       {perType && (
                         <div className="rounded-xl border border-ink-100 p-4">
                           <div className="text-sm font-extrabold text-ink-900">Cajas por tipo</div>
@@ -1235,11 +1190,7 @@ export default function Index({ result }) {
                                   return (
                                     <tr key={code} className="border-t border-ink-100">
                                       <td className="py-2 pr-3 font-semibold">
-                                        {code === "tower"
-                                          ? "Torres"
-                                          : code === "laptop"
-                                            ? "Portátiles"
-                                            : "Mini PCs"}
+                                        {code === "tower" ? "Torres" : code === "laptop" ? "Portátiles" : "Mini PCs"}
                                       </td>
                                       <td className="py-2 pr-3">{fmtNum(t.per_layer)}</td>
                                       <td className="py-2 pr-3">{fmtNum(t.height_cm)}</td>
@@ -1253,7 +1204,6 @@ export default function Index({ result }) {
                         </div>
                       )}
 
-                      {/* Nota */}
                       {metrics?.note && (
                         <div className="text-xs text-ink-500">
                           <b>Nota:</b> {metrics.note}
@@ -1264,7 +1214,6 @@ export default function Index({ result }) {
                 );
               })()}
 
-              {/* ALTERNATIVAS (tabla) */}
               {alternatives.length > 0 && (
                 <details className="rounded-xl border border-ink-100 p-4">
                   <summary className="cursor-pointer text-sm font-semibold text-ink-800">
@@ -1290,25 +1239,7 @@ export default function Index({ result }) {
                               <div className="text-sm font-semibold text-ink-800">
                                 {fmtEUR(pricePerPallet(a))}
                               </div>
-
-                              {/* Desglosa los costes en las alternativas */}
-
-                              {/* {(a.price_per_pallet === null || a.price_per_pallet === undefined) && (
-                                <div className="mt-1 text-xs text-ink-500">
-                                  {a.metrics?.cost_breakdown && (
-                                    <div className="mt-1">
-                                      {Object.entries(a.metrics.cost_breakdown).map(([code, cost]) => (
-                                        <div key={code}>
-                                          {code}: <b>{fmtEUR(cost)}</b>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}*/}
                             </td>
-
-
                             <td className="py-2 pr-3">{fmtEUR(a.total_price)}</td>
                           </tr>
                         ))}
@@ -1322,13 +1253,10 @@ export default function Index({ result }) {
                   </div>
                 </details>
               )}
-
             </div>
-
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
           )}
-
 
           {best && (
             <div className="mt-24 flex items-end justify-end gap-3">
@@ -1367,19 +1295,11 @@ export default function Index({ result }) {
           )}
         </Card>
       </div>
-      {boxModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          role="dialog"
-          aria-modal="true"
-        >
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/40"
-            onMouseDown={closeBoxTypesModal}
-          />
 
-          {/* Modal */}
+      {boxModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/40" onMouseDown={closeBoxTypesModal} />
+
           <div className="relative z-10 w-[min(980px,92vw)] rounded-2xl bg-white shadow-soft ring-1 ring-ink-100">
             <div className="flex items-start justify-between gap-4 border-b border-ink-100 p-5">
               <div>
@@ -1440,7 +1360,6 @@ export default function Index({ result }) {
                           Number.isFinite(W) && W > 0 &&
                           Number.isFinite(H) && H > 0 &&
                           Number.isFinite(KG) && KG > 0;
-
 
                         return (
                           <tr key={b.id} className="border-t border-ink-100">
@@ -1508,6 +1427,7 @@ export default function Index({ result }) {
                                     Revisa nombre, medidas y peso (deben ser &gt; 0).
                                   </div>
                                 )}
+
                                 <button
                                   type="button"
                                   onClick={() => saveBoxType(b)}
