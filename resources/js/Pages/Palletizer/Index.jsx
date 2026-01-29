@@ -103,6 +103,8 @@ function pricePerPallet(plan) {
 
 export default function Index({ result }) {
   const { data, setData, post, processing, errors } = useForm({
+    country_code: "ES",
+    zone_id: null,
     province_id: null,
     mini_pc: 0,
     tower: 0,
@@ -139,6 +141,16 @@ export default function Index({ result }) {
   // Exportacion de docs
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
+
+  // Countries y zones
+  const [countries, setCountries] = useState([]);
+  const [loadingCountries, setLoadingCountries] = useState(true);
+  const [countriesError, setCountriesError] = useState(null);
+
+  const [zones, setZones] = useState([]);
+  const [loadingZones, setLoadingZones] = useState(false);
+  const [zonesError, setZonesError] = useState(null);
+
 
   const fetchBoxTypes = async () => {
     setLoadingBoxTypes(true);
@@ -368,7 +380,9 @@ export default function Index({ result }) {
       }
 
       const payload = {
-        province_id: data.province_id,
+        country_code: data.country_code,
+        province_id: data.country_code === "ES" ? data.province_id : null,
+        zone_id: data.country_code === "ES" ? null : data.zone_id,
         tower: Number(data.tower ?? 0),
         laptop: Number(data.laptop ?? 0),
         mini_pc: Number(data.mini_pc ?? 0),
@@ -495,15 +509,33 @@ export default function Index({ result }) {
   };
 
 
+
   const manualOk = data.pallet_mode !== "manual" || data.pallet_type_codes.length > 0;
+
+  const isES = (data.country_code || "ES") === "ES";
+
+  const destinationOk = isES
+    ? (
+      !loadingProvinces &&
+      !provincesError &&
+      data.province_id !== null &&
+      provinces.some((p) => p.id === data.province_id)
+    )
+    : (
+      !loadingZones &&
+      !zonesError &&
+      data.zone_id !== null &&
+      zones.some((z) => z.id === data.zone_id)
+    );
 
   const canSubmit =
     !processing &&
-    !loadingProvinces &&
-    !provincesError &&
-    data.province_id !== null &&
-    provinces.some((p) => p.id === data.province_id) &&
-    manualOk;
+    !loadingCountries &&
+    !countriesError &&
+    manualOk &&
+    destinationOk;
+
+
 
   const best = result?.plan?.best || null;
   const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
@@ -528,6 +560,66 @@ export default function Index({ result }) {
   // Avisos
   const warnings = Array.isArray(best?.warnings) ? best.warnings : [];
 
+  // Fetch de países
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/countries")
+      .then((r) => {
+        if (!r.ok) throw new Error("No se pudieron cargar países");
+        return r.json();
+      })
+      .then((list) => {
+        if (cancelled) return;
+        setCountries(Array.isArray(list) ? list : []);
+        setLoadingCountries(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadingCountries(false);
+        setCountriesError(e.message || "Error cargando países");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fetch de zonas si el país no es ES
+  useEffect(() => {
+    if (!data.country_code || data.country_code === "ES") {
+      setZones([]);
+      setData("zone_id", null);
+      setZonesError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingZones(true);
+    setZonesError(null);
+
+    fetch(`/api/zones?country_code=${encodeURIComponent(data.country_code)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("No se pudieron cargar zonas");
+        return r.json();
+      })
+      .then((list) => {
+        if (cancelled) return;
+        setZones(Array.isArray(list) ? list : []);
+        setLoadingZones(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadingZones(false);
+        setZonesError(e.message || "Error cargando zonas");
+      });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.country_code]);
+
+
+
   return (
     <AppLayout title="Palletizer">
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
@@ -543,66 +635,132 @@ export default function Index({ result }) {
           </div>
 
           <form onSubmit={submit} className="mt-5 space-y-4">
-            {/* Provincia */}
-            <Field
-              label="Provincia destino"
-              hint={
-                selectedProvinceObj?.zone_name
-                  ? `Seleccionada: ${selectedProvinceObj.name} · ${selectedProvinceObj.zone_name}`
-                  : "Escribe para buscar (ej. Zara, Mad...)"
-              }
-              error={errors.province_id}
-            >
-              <div ref={containerRef} className="relative">
-                <input
-                  value={query}
-                  disabled={loadingProvinces || !!provincesError}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setIsOpen(true);
+            <Field label="País destino" error={errors.country_code}>
+              <select
+                value={data.country_code}
+                disabled={loadingCountries || !!countriesError}
+                onChange={(e) => {
+                  const cc = e.target.value;
+                  setData("country_code", cc);
+
+                  // Reset dependientes
+                  if (cc === "ES") {
+                    setData("zone_id", null);
+                  } else {
+                    setData("province_id", null);
+                    setQuery("");
+                    setIsOpen(false);
                     setHighlightIndex(0);
-                  }}
-                  onFocus={() => setIsOpen(true)}
-                  onKeyDown={onKeyDown}
-                  placeholder={loadingProvinces ? "Cargando..." : "Buscar provincia..."}
-                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
-                />
-
-                {isOpen && !loadingProvinces && !provincesError && (
-                  <div className="absolute left-0 right-0 top-[42px] z-20 max-h-72 overflow-auto rounded-xl border border-ink-200 bg-white shadow-soft">
-                    {filtered.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-ink-500">Sin resultados.</div>
-                    ) : (
-                      filtered.map((p, idx) => (
-                        <div
-                          key={p.id}
-                          onMouseEnter={() => setHighlightIndex(idx)}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            selectProvince(p);
-                          }}
-                          className={[
-                            "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
-                            idx === highlightIndex ? "bg-ink-50" : "bg-white",
-                          ].join(" ")}
-                        >
-                          <span className="text-ink-800">{p.name}</span>
-                          <span className="whitespace-nowrap text-xs text-ink-500">
-                            {p.zone_name}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  }
+                }}
+                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+              >
+                {loadingCountries ? (
+                  <option value="ES">Cargando…</option>
+                ) : (
+                  countries.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))
                 )}
-              </div>
+              </select>
 
-              {provincesError && (
+              {countriesError && (
                 <div className="mt-2 text-xs font-semibold text-red-600">
-                  {provincesError} (revisa GET /api/provinces)
+                  {countriesError} (revisa GET /api/countries)
                 </div>
               )}
             </Field>
+
+            {/* Provincia */}
+            {data.country_code === "ES" ? (
+              <Field
+                label="Provincia destino"
+                hint={
+                  selectedProvinceObj?.zone_name
+                    ? `Seleccionada: ${selectedProvinceObj.name} · ${selectedProvinceObj.zone_name}`
+                    : "Escribe para buscar (ej. Zara, Mad...)"
+                }
+                error={errors.province_id}
+              >
+                <div ref={containerRef} className="relative">
+                  <input
+                    value={query}
+                    disabled={loadingProvinces || !!provincesError}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setIsOpen(true);
+                      setHighlightIndex(0);
+                    }}
+                    onFocus={() => setIsOpen(true)}
+                    onKeyDown={onKeyDown}
+                    placeholder={loadingProvinces ? "Cargando..." : "Buscar provincia..."}
+                    className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                  />
+
+                  {isOpen && !loadingProvinces && !provincesError && (
+                    <div className="absolute left-0 right-0 top-[42px] z-20 max-h-72 overflow-auto rounded-xl border border-ink-200 bg-white shadow-soft">
+                      {filtered.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-ink-500">Sin resultados.</div>
+                      ) : (
+                        filtered.map((p, idx) => (
+                          <div
+                            key={p.id}
+                            onMouseEnter={() => setHighlightIndex(idx)}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              selectProvince(p);
+                            }}
+                            className={[
+                              "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
+                              idx === highlightIndex ? "bg-ink-50" : "bg-white",
+                            ].join(" ")}
+                          >
+                            <span className="text-ink-800">{p.name}</span>
+                            <span className="whitespace-nowrap text-xs text-ink-500">
+                              {p.zone_name}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {provincesError && (
+                  <div className="mt-2 text-xs font-semibold text-red-600">
+                    {provincesError} (revisa GET /api/provinces)
+                  </div>
+                )}
+              </Field>
+            ) : (
+              <Field
+                label="Zona destino"
+                hint="Selecciona la zona para el país elegido"
+                error={errors.zone_id}
+              >
+                <select
+                  value={data.zone_id ?? ""}
+                  disabled={loadingZones || !!zonesError}
+                  onChange={(e) => setData("zone_id", e.target.value ? Number(e.target.value) : null)}
+                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                >
+                  <option value="">{loadingZones ? "Cargando…" : "Selecciona zona…"}</option>
+                  {zones.map((z) => (
+                    <option key={z.id} value={z.id}>
+                      {z.name}
+                    </option>
+                  ))}
+                </select>
+
+                {zonesError && (
+                  <div className="mt-2 text-xs font-semibold text-red-600">
+                    {zonesError} (revisa GET /api/zones)
+                  </div>
+                )}
+              </Field>
+            )}
 
             {/* Tipos de pallet */}
             <div className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
@@ -1166,7 +1324,7 @@ export default function Index({ result }) {
               )}
 
             </div>
-            
+
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
           )}
@@ -1174,39 +1332,39 @@ export default function Index({ result }) {
 
           {best && (
             <div className="mt-24 flex items-end justify-end gap-3">
-            <button
-              type="button"
-              onClick={exportBestPlanPdf}
-              disabled={!canSubmit || exporting}
-              className={[
-                "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-soft transition",
-                "bg-red-700 text-white",
-                "hover:bg-red-800",
-                "focus:outline-none focus:ring-2 focus:ring-red-900 focus:ring-offset-2 focus:ring-offset-white",
-                "active:translate-y-[1px]",
-                "disabled:cursor-not-allowed disabled:opacity-60",
-              ].join(" ")}
-            >
-              {exporting ? "Exportando…" : "Exportar PDF"}
-            </button>
+              <button
+                type="button"
+                onClick={exportBestPlanPdf}
+                disabled={!canSubmit || exporting}
+                className={[
+                  "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-soft transition",
+                  "bg-red-700 text-white",
+                  "hover:bg-red-800",
+                  "focus:outline-none focus:ring-2 focus:ring-red-900 focus:ring-offset-2 focus:ring-offset-white",
+                  "active:translate-y-[1px]",
+                  "disabled:cursor-not-allowed disabled:opacity-60",
+                ].join(" ")}
+              >
+                {exporting ? "Exportando…" : "Exportar PDF"}
+              </button>
 
-            <button
-              type="button"
-              onClick={exportBestPlanExcel}
-              disabled={!canSubmit || exporting}
-              className={[
-                "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-soft transition",
-                "bg-green-700 text-white",
-                "hover:bg-green-800",
-                "focus:outline-none focus:ring-2 focus:ring-green-900 focus:ring-offset-2 focus:ring-offset-white",
-                "active:translate-y-[1px]",
-                "disabled:cursor-not-allowed disabled:opacity-60",
-              ].join(" ")}
-            >
-              {exporting ? "Exportando…" : "Exportar Excel"}
-            </button>
-          </div>
-          )}         
+              <button
+                type="button"
+                onClick={exportBestPlanExcel}
+                disabled={!canSubmit || exporting}
+                className={[
+                  "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-soft transition",
+                  "bg-green-700 text-white",
+                  "hover:bg-green-800",
+                  "focus:outline-none focus:ring-2 focus:ring-green-900 focus:ring-offset-2 focus:ring-offset-white",
+                  "active:translate-y-[1px]",
+                  "disabled:cursor-not-allowed disabled:opacity-60",
+                ].join(" ")}
+              >
+                {exporting ? "Exportando…" : "Exportar Excel"}
+              </button>
+            </div>
+          )}
         </Card>
       </div>
       {boxModalOpen && (

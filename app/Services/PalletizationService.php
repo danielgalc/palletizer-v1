@@ -86,9 +86,13 @@ class PalletizationService
                 $rate = $fallback->orderByDesc('max_pallets')->first();
             }
 
+            if (!$rate) {
+                continue; // 👈 evita el crash
+            }
 
             $pricePerPallet = (float) $rate->price_eur;
-            $totalPrice = $pricePerPallet * (int)$sim['pallet_count'];
+            $totalPrice = $pricePerPallet * (int) $sim['pallet_count'];
+
 
             $candidates[] = [
                 'pallet_type_code' => $palletType->code,
