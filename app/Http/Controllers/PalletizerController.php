@@ -19,42 +19,70 @@ class PalletizerController extends Controller
 
     public function calculate(Request $request, PalletizationService $svc)
     {
+        $request->merge([
+            'country_code' => strtoupper($request->input('country_code', 'ES')),
+        ]);
+
         $data = $request->validate([
-            'province_id' => ['required', 'integer', 'exists:provinces,id'],
+            'country_code' => ['required', 'string', 'size:2', 'exists:countries,code'],
+
+            // ES: province_id; resto: zone_id
+            'province_id' => ['required_if:country_code,ES', 'nullable', 'integer', 'exists:provinces,id'],
+            'zone_id' => ['required_unless:country_code,ES', 'nullable', 'integer', 'exists:zones,id'],
+
+
             'mini_pc'  => ['required', 'integer', 'min:0'],
             'tower'    => ['required', 'integer', 'min:0'],
             'laptop'   => ['required', 'integer', 'min:0'],
-            
+
             'pallet_mode' => ['required', 'in:auto,manual'],
             'pallet_type_codes' => ['nullable', 'array'],
             'pallet_type_codes.*' => ['string', 'exists:pallet_types,code'],
 
             'allow_separators' => ['required', 'boolean'],
-            ]);
-
+        ]);
 
 
         $province = DB::table('provinces')->where('id', $data['province_id'])->first();
 
-        // Normalización básica
-        $provinceInput = mb_strtolower($province->name);
-        $provinceInput = str_replace(
-            ['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ'],
-            ['a', 'e', 'i', 'o', 'u', 'u', 'n'],
-            $provinceInput
-        );
+        $countryCode = strtoupper($data['country_code']);
+        $zoneId = null;
 
-        // Buscamos comparando normalizado
-        $province = DB::table('provinces')->get()->first(function ($p) use ($provinceInput) {
-            $name = mb_strtolower($p->name);
-            $name = str_replace(
-                ['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ'],
-                ['a', 'e', 'i', 'o', 'u', 'u', 'n'],
-                $name
-            );
-            return $name === $provinceInput;
-        });
+        $provinceName = null;
+        $provinceId = null;
 
+        if ($countryCode === 'ES') {
+            if (empty($data['province_id'])) {
+                return back()->withErrors(['province_id' => 'Selecciona una provincia.']);
+            }
+
+            $province = DB::table('provinces')->where('id', $data['province_id'])->first();
+            if (!$province) {
+                return back()->withErrors(['province_id' => 'Provincia no encontrada.']);
+            }
+
+            $zoneId = (int) $province->zone_id;
+            $provinceName = (string) $province->name;
+            $provinceId = (int) $province->id;
+        } else {
+            if (empty($data['zone_id'])) {
+                return back()->withErrors(['zone_id' => 'Selecciona una zona.']);
+            }
+
+            // Asegurar que la zona pertenece al país
+            $zone = DB::table('zones')
+                ->join('countries', 'countries.id', '=', 'zones.country_id')
+                ->where('zones.id', $data['zone_id'])
+                ->where('countries.code', $countryCode)
+                ->select('zones.id', 'zones.name', 'countries.name as country_name', 'countries.code as country_code')
+                ->first();
+
+            if (!$zone) {
+                return back()->withErrors(['zone_id' => 'Zona inválida para el país seleccionado.']);
+            }
+
+            $zoneId = (int) $zone->id;
+        }
 
         if (!$province) {
             return back()->withErrors([
@@ -78,13 +106,14 @@ class PalletizerController extends Controller
         $allowedCodes = ($data['pallet_mode'] === 'manual') ? $data['pallet_type_codes'] : null;
         $allowSeparators = (bool) $data['allow_separators'];
 
-        $plan = $svc->calculateBestPlan($province->zone_id, $items, $allowedCodes, $allowSeparators);
+        $plan = $svc->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedCodes, $allowSeparators);
 
         return Inertia::render('Palletizer/Index', [
             'result' => [
-                'province' => $province->name,
-                'province_id' => (int) $province->id,
-                'zone_id' => (int) $province->zone_id,
+                'country_code' => $countryCode,
+                'province' => $provinceName,
+                'province_id' => $provinceId,
+                'zone_id' => (int) $zoneId,
                 'items' => $items,
                 'plan' => $plan,
             ],

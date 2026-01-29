@@ -27,11 +27,6 @@ Route::middleware('auth')->group(function () {
 
 // Rutas Palletizer
 
-Route::get('/palletizer', function () {
-    return Inertia::render('Palletizer/Index');
-})->name('palletizer');
-
-
 Route::get('/palletizer', [PalletizerController::class, 'index'])->name('palletizer.index');
 Route::post('/palletizer/calculate', [PalletizerController::class, 'calculate'])->name('palletizer.calculate');
 

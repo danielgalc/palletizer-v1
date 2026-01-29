@@ -24,7 +24,8 @@ class PalletizationService
         int $zoneId,
         array $items,
         ?array $allowedPalletTypeCodes = null,
-        bool $allowSeparators = true
+        bool $allowSeparators = true,
+        ?int $carrierId = null
     ): array {
         $boxTypes = DB::table('box_types')->get()->keyBy('code');
 
@@ -59,27 +60,32 @@ class PalletizationService
                 continue;
             }
 
-            // Tarifa según tramo para ESTE tipo y número de pallets
-            $rate = DB::table('rates')
+            $rateQuery = DB::table('rates')
                 ->where('zone_id', $zoneId)
-                ->where('pallet_type_id', $palletType->id)
+                ->where('pallet_type_id', $palletType->id);
+
+            if ($carrierId !== null) {
+                $rateQuery->where('carrier_id', $carrierId);
+            }
+
+            $rate = $rateQuery
                 ->where('min_pallets', '<=', $sim['pallet_count'])
                 ->where('max_pallets', '>=', $sim['pallet_count'])
                 ->orderBy('min_pallets')
                 ->first();
 
             if (!$rate) {
-                // Si no hay tramo exacto, cogemos el último tramo disponible
-                $rate = DB::table('rates')
+                $fallback = DB::table('rates')
                     ->where('zone_id', $zoneId)
-                    ->where('pallet_type_id', $palletType->id)
-                    ->orderByDesc('max_pallets')
-                    ->first();
+                    ->where('pallet_type_id', $palletType->id);
+
+                if ($carrierId !== null) {
+                    $fallback->where('carrier_id', $carrierId);
+                }
+
+                $rate = $fallback->orderByDesc('max_pallets')->first();
             }
 
-            if (!$rate) {
-                continue; // no hay tarifa para este tipo en esa zona
-            }
 
             $pricePerPallet = (float) $rate->price_eur;
             $totalPrice = $pricePerPallet * (int)$sim['pallet_count'];
@@ -182,8 +188,8 @@ class PalletizationService
                             }
 
                             // COSTE: calcula tramo por cada tipo según su cantidad dentro del plan mixto
-                            $costA = $this->calculateCostForPalletType($zoneId, $typeA, (int)($simA['pallet_count'] ?? 0));
-                            $costB = $this->calculateCostForPalletType($zoneId, $typeB, (int)($simB['pallet_count'] ?? 0));
+                            $costA = $this->calculateCostForPalletType($zoneId, $typeA, (int)($simA['pallet_count'] ?? 0), $carrierId);
+                            $costB = $this->calculateCostForPalletType($zoneId, $typeB, (int)($simB['pallet_count'] ?? 0), $carrierId);
 
                             if ($costA === null || $costB === null) {
                                 continue;
@@ -756,7 +762,7 @@ class PalletizationService
      * Calcula coste TOTAL para un tipo de pallet (precio por tramo * nº pallets),
      * devolviendo null si no hay tarifas.
      */
-    private function calculateCostForPalletType(int $zoneId, object $palletType, int $palletCount): ?float
+    private function calculateCostForPalletType(int $zoneId, object $palletType, int $palletCount, ?int $carrierId = null): ?float
     {
         if ($palletCount <= 0) return 0.0;
 
@@ -768,16 +774,99 @@ class PalletizationService
             ->orderBy('min_pallets')
             ->first();
 
+        $rateQuery = DB::table('rates')
+            ->where('zone_id', $zoneId)
+            ->where('pallet_type_id', $palletType->id);
+
+        if ($carrierId !== null) {
+            $rateQuery->where('carrier_id', $carrierId);
+        }
+
+        $rate = $rateQuery
+            ->where('min_pallets', '<=', $palletCount)
+            ->where('max_pallets', '>=', $palletCount)
+            ->orderBy('min_pallets')
+            ->first();
+
         if (!$rate) {
-            $rate = DB::table('rates')
+            $fallback = DB::table('rates')
                 ->where('zone_id', $zoneId)
-                ->where('pallet_type_id', $palletType->id)
-                ->orderByDesc('max_pallets')
-                ->first();
+                ->where('pallet_type_id', $palletType->id);
+
+            if ($carrierId !== null) {
+                $fallback->where('carrier_id', $carrierId);
+            }
+
+            $rate = $fallback->orderByDesc('max_pallets')->first();
         }
 
         if (!$rate) return null;
 
         return (float) $rate->price_eur * $palletCount;
+    }
+
+    public function calculateBestPlanAcrossCarriers(
+        int $zoneId,
+        array $items,
+        ?array $allowedPalletTypeCodes = null,
+        bool $allowSeparators = true
+    ): array {
+        $carrierRows = DB::table('rates')
+            ->join('carriers', 'carriers.id', '=', 'rates.carrier_id')
+            ->where('rates.zone_id', $zoneId)
+            ->where('carriers.is_active', true)
+            ->select('carriers.id', 'carriers.code', 'carriers.name')
+            ->distinct()
+            ->get();
+
+        if ($carrierRows->isEmpty()) {
+            return ['error' => 'No hay transportistas con tarifas para esa zona.'];
+        }
+
+        $allCandidates = [];
+
+        foreach ($carrierRows as $c) {
+            $plan = $this->calculateBestPlan($zoneId, $items, $allowedPalletTypeCodes, $allowSeparators, (int)$c->id);
+
+            if (!empty($plan['error'])) {
+                continue;
+            }
+
+            $best = $plan['best'] ?? null;
+            $alts = $plan['alternatives'] ?? [];
+
+            if ($best) {
+                $best['carrier_id'] = (int)$c->id;
+                $best['carrier_code'] = (string)$c->code;
+                $best['carrier_name'] = (string)$c->name;
+                $allCandidates[] = $best;
+            }
+
+            if (is_array($alts)) {
+                foreach ($alts as $a) {
+                    $a['carrier_id'] = (int)$c->id;
+                    $a['carrier_code'] = (string)$c->code;
+                    $a['carrier_name'] = (string)$c->name;
+                    $allCandidates[] = $a;
+                }
+            }
+        }
+
+        if (empty($allCandidates)) {
+            return ['error' => 'No se pudo calcular ningún plan con las tarifas disponibles.'];
+        }
+
+        usort($allCandidates, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
+
+        $best = $allCandidates[0];
+        $alternatives = array_slice($allCandidates, 1, 5);
+
+        $recommendations = $this->buildRecommendations($best, $alternatives, 0.03);
+
+        return [
+            'best' => $best,
+            'alternatives' => $alternatives,
+            'recommendations' => $recommendations,
+        ];
     }
 }

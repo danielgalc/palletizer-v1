@@ -22,8 +22,15 @@ class ExportController extends Controller
 {
     public function bestPlan(Request $request, PalletizationService $service): StreamedResponse
     {
+
+        $request->merge([
+            'country_code' => strtoupper($request->input('country_code', 'ES')),
+        ]);
+
         $v = Validator::make($request->all(), [
-            'province_id' => ['required', 'integer'],
+            'country_code' => ['required', 'string', 'size:2', 'exists:countries,code'],
+            'province_id' => ['required_if:country_code,ES', 'nullable', 'integer'],
+            'zone_id' => ['required_unless:country_code,ES', 'nullable', 'integer', 'exists:zones,id'],
             'tower' => ['nullable', 'integer', 'min:0'],
             'laptop' => ['nullable', 'integer', 'min:0'],
             'mini_pc' => ['nullable', 'integer', 'min:0'],
@@ -60,7 +67,7 @@ class ExportController extends Controller
         }
 
         // 3) Calcular
-        $plan = $service->calculateBestPlan($zoneId, $items, $allowedTypes, $allowSeparators);
+        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators);
         if (!empty($plan['error'])) {
             abort(422, $plan['error']);
         }
@@ -270,8 +277,14 @@ class ExportController extends Controller
     {
         // Reutiliza la misma validación / resolución de zona / items que en bestPlan()
 
+        $request->merge([
+            'country_code' => strtoupper($request->input('country_code', 'ES')),
+        ]);
+
         $v = Validator::make($request->all(), [
-            'province_id' => ['required', 'integer'],
+            'country_code' => ['required', 'string', 'size:2', 'exists:countries,code'],
+            'province_id' => ['required_if:country_code,ES', 'nullable', 'integer'],
+            'zone_id' => ['required_unless:country_code,ES', 'nullable', 'integer', 'exists:zones,id'],
             'tower' => ['nullable', 'integer', 'min:0'],
             'laptop' => ['nullable', 'integer', 'min:0'],
             'mini_pc' => ['nullable', 'integer', 'min:0'],
@@ -301,7 +314,7 @@ class ExportController extends Controller
             $allowedTypes = $request->pallet_type_codes ?? [];
         }
 
-        $plan = $service->calculateBestPlan($zoneId, $items, $allowedTypes, $allowSeparators);
+        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators);
         if (!empty($plan['error'])) abort(422, $plan['error']);
 
         $best = $plan['best'] ?? null;

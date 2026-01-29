@@ -9,14 +9,18 @@ return new class extends Migration {
     {
         Schema::create('rates', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('carrier_id')->constrained('carriers');
             $table->foreignId('zone_id')->constrained('zones');
             $table->foreignId('pallet_type_id')->constrained('pallet_types');
             $table->unsignedSmallInteger('min_pallets');
             $table->unsignedSmallInteger('max_pallets');
-            $table->decimal('price_eur', 10, 2); // precio por pallet en ese tramo
+            $table->decimal('price_eur', 10, 2);
             $table->timestamps();
 
-            $table->unique(['zone_id', 'pallet_type_id', 'min_pallets', 'max_pallets'], 'rates_unique');
+            $table->unique(
+                ['carrier_id', 'zone_id', 'pallet_type_id', 'min_pallets', 'max_pallets'],
+                'rates_unique'
+            );
         });
     }
 
@@ -25,4 +29,3 @@ return new class extends Migration {
         Schema::dropIfExists('rates');
     }
 };
-
