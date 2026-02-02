@@ -87,7 +87,7 @@ class PalletizationService
             }
 
             if (!$rate) {
-                continue; // 👈 evita el crash
+                continue; // evita el crash
             }
 
             $pricePerPallet = (float) $rate->price_eur;

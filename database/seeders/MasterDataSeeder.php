@@ -59,6 +59,11 @@ class MasterDataSeeder extends Seeder
 
         $carrierId = fn (string $code) => DB::table('carriers')->where('code', $code)->value('id');
 
+        // Carrier IDs (los usaremos para sembrar tarifas)
+        $palletwaysId = $carrierId('palletways');
+        $euroFastId   = $carrierId('euro_fast');
+        $budgetId     = $carrierId('budget_freight');
+
         // -------------------------
         // ZONES
         // - ES: zonas 1..9, 11..14
@@ -251,8 +256,6 @@ class MasterDataSeeder extends Seeder
             }
         }
 
-        $palletwaysId = $carrierId('palletways');
-
         foreach ($rates as $r) {
             DB::table('rates')->updateOrInsert(
                 [
@@ -271,13 +274,103 @@ class MasterDataSeeder extends Seeder
         }
 
         // -------------------------
+        // RATES DEMO (ES/PT) para carriers ficticios
+        // - Para poder comparar transportistas también en España/Portugal,
+        //   derivamos las tarifas de Palletways aplicando multiplicadores.
+        // - Esto NO pretende ser real: solo crea una estructura coherente para pruebas.
+        // -------------------------
+
+        $carrierProfiles = [
+            'euro_fast' => [
+                'id' => $euroFastId,
+                // EuroFast: algo más caro en general, pero con mejores descuentos por volumen
+                'base_mult' => 1.06,
+                'discount_by_tramo' => [
+                    1 => 1.00,
+                    2 => 0.985,
+                    3 => 0.970,
+                    4 => 0.960,
+                    5 => 0.950,
+                ],
+                // Ajustes por tipo (simula que algunos "servicios" penalizan/bonifican ciertos tamaños)
+                'pallet_mult' => [
+                    'mini_quarter' => 1.02,
+                    'quarter' => 1.03,
+                    'half' => 1.04,
+                    'extra_light' => 1.06,
+                    'light' => 1.06,
+                    'full' => 1.08,
+                ],
+                // Ajuste por zona (islas suelen ser más caras)
+                'zone_mult' => [
+                    11 => 1.03,
+                    12 => 1.03,
+                ],
+            ],
+            'budget_freight' => [
+                'id' => $budgetId,
+                // Budget: más barato en general, pero con descuentos por volumen más modestos
+                'base_mult' => 0.93,
+                'discount_by_tramo' => [
+                    1 => 1.00,
+                    2 => 0.995,
+                    3 => 0.985,
+                    4 => 0.980,
+                    5 => 0.975,
+                ],
+                'pallet_mult' => [
+                    'mini_quarter' => 0.95,
+                    'quarter' => 0.94,
+                    'half' => 0.93,
+                    'extra_light' => 0.93,
+                    'light' => 0.93,
+                    'full' => 0.95,
+                ],
+                'zone_mult' => [
+                    11 => 1.02,
+                    12 => 1.02,
+                ],
+            ],
+        ];
+
+        foreach ($carrierProfiles as $profile) {
+            $cid = (int)($profile['id'] ?? 0);
+            if ($cid <= 0) continue;
+
+            foreach ($rates as $r) {
+                $zoneNum = (int)($r['zone'] ?? 0);
+                $pCode   = (string)($r['pallet'] ?? '');
+                $tramo   = (int)($r['min'] ?? 1);
+
+                $baseMult = (float)($profile['base_mult'] ?? 1.0);
+                $palletMult = (float)($profile['pallet_mult'][$pCode] ?? $baseMult);
+                $disc = (float)($profile['discount_by_tramo'][$tramo] ?? 1.0);
+                $zoneMult = (float)($profile['zone_mult'][$zoneNum] ?? 1.0);
+
+                $price = round(((float)$r['price']) * $palletMult * $disc * $zoneMult, 2);
+
+                DB::table('rates')->updateOrInsert(
+                    [
+                        'carrier_id' => $cid,
+                        'zone_id' => $zoneIds[$zoneNum],
+                        'pallet_type_id' => $palletId($pCode),
+                        'min_pallets' => (int)$r['min'],
+                        'max_pallets' => (int)$r['max'],
+                    ],
+                    [
+                        'price_eur' => $price,
+                        'updated_at' => now(),
+                        'created_at' => now(),
+                    ]
+                );
+            }
+        }
+
+        // -------------------------
         // RATES DEMO (IT/RO/PL) para 2 carriers
         // - Simplificado: solo 'light' y 'full' en tramos 1..3
         // - Se aplica a TODAS las zonas reales definidas arriba
         // -------------------------
-        $euroFastId = $carrierId('euro_fast');
-        $budgetId   = $carrierId('budget_freight');
-
         $demoPallets = ['light', 'full'];
         $demoTramos  = [1, 2, 3];
 
