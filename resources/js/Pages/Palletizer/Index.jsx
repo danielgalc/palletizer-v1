@@ -194,7 +194,7 @@ export default function Index({ result }) {
             const firstKey = Object.keys(data.errors)[0];
             if (firstKey) errText = data.errors[firstKey][0];
           }
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(errText);
       }
 
@@ -341,7 +341,7 @@ export default function Index({ result }) {
         post(route("palletizer.calculate"), { preserveScroll: true });
         return;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     post("/palletizer/calculate", { preserveScroll: true });
   };
@@ -378,7 +378,7 @@ export default function Index({ result }) {
         try {
           const j = await res.json();
           if (j?.message) msg = j.message;
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(msg);
       }
 
@@ -440,7 +440,7 @@ export default function Index({ result }) {
             const t = await res.text();
             if (t) msg = t;
           }
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(msg);
       }
 
@@ -481,17 +481,17 @@ export default function Index({ result }) {
   const destinationOk = countrySelected && (
     isES
       ? (
-          !loadingProvinces &&
-          !provincesError &&
-          data.province_id !== null &&
-          provinces.some((p) => p.id === data.province_id)
-        )
+        !loadingProvinces &&
+        !provincesError &&
+        data.province_id !== null &&
+        provinces.some((p) => p.id === data.province_id)
+      )
       : (
-          !loadingZones &&
-          !zonesError &&
-          data.zone_id !== null &&
-          zones.some((z) => z.id === data.zone_id)
-        )
+        !loadingZones &&
+        !zonesError &&
+        data.zone_id !== null &&
+        zones.some((z) => z.id === data.zone_id)
+      )
   );
 
   const canSubmit =
@@ -1024,7 +1024,7 @@ export default function Index({ result }) {
               <div className="rounded-xl border border-ink-100 p-4">
                 <div className="text-sm font-extrabold text-ink-900">{best.pallet_type_name}</div>
                 <div className="mt-1 text-xs text-ink-500">
-                  Destino: {result.province} · Zona {result.zone_id}
+                  Destino: {result.destination} · Zona {result.zone_id}
                 </div>
               </div>
 

@@ -21,8 +21,9 @@ class PalletizerController extends Controller
     {
         $data = $request->validate([
             'country_code' => ['required', 'string', 'size:2'],
-            'province_id'  => ['nullable', 'integer', 'exists:provinces,id'],
-            'zone_id'      => ['nullable', 'integer', 'exists:zones,id'],
+
+            'province_id' => ['nullable', 'integer', 'exists:provinces,id', 'required_if:country_code,ES'],
+            'zone_id' => ['nullable', 'integer', 'exists:zones,id', 'required_unless:country_code,ES'],
 
             'mini_pc'  => ['required', 'integer', 'min:0'],
             'tower'    => ['required', 'integer', 'min:0'],
@@ -35,6 +36,7 @@ class PalletizerController extends Controller
             'allow_separators' => ['required', 'boolean'],
         ]);
 
+
         if ($data['pallet_mode'] === 'manual' && empty($data['pallet_type_codes'])) {
             return back()->withErrors([
                 'pallet_type_codes' => 'Selecciona al menos un tipo de pallet o usa modo Auto.',
@@ -43,36 +45,22 @@ class PalletizerController extends Controller
 
         $country = strtoupper($data['country_code'] ?? 'ES');
 
-        // Resolver zoneId + etiqueta destino
-        $zoneId = null;
-        $destinationLabel = null;
+        // Determinar zona según país
+        $isES = ($data['country_code'] ?? 'ES') === 'ES';
 
-        if ($country === 'ES') {
-            if (empty($data['province_id'])) {
-                return back()->withErrors(['province_id' => 'Selecciona una provincia.']);
-            }
-
+        if ($isES) {
             $province = DB::table('provinces')->where('id', $data['province_id'])->first();
             if (!$province) {
                 return back()->withErrors(['province_id' => 'Provincia no encontrada.']);
             }
-
             $zoneId = (int) $province->zone_id;
-            $destinationLabel = $province->name;
+            $destinationLabel = $province->name; // para pintar en UI
         } else {
-            if (empty($data['zone_id'])) {
-                return back()->withErrors(['zone_id' => 'Selecciona una zona.']);
-            }
-
-            // (Opcional pero recomendable) validar que esa zona pertenece al país:
-            // $zone = DB::table('zones')->where('id', $data['zone_id'])->where('country_code', $country)->first();
-            $zone = DB::table('zones')->where('id', $data['zone_id'])->first();
-
+            $zoneId = (int) $data['zone_id'];
+            $zone = DB::table('zones')->where('id', $zoneId)->first();
             if (!$zone) {
                 return back()->withErrors(['zone_id' => 'Zona no encontrada.']);
             }
-
-            $zoneId = (int) $zone->id;
             $destinationLabel = $zone->name;
         }
 
@@ -85,12 +73,12 @@ class PalletizerController extends Controller
         $allowedCodes = ($data['pallet_mode'] === 'manual') ? $data['pallet_type_codes'] : null;
         $allowSeparators = (bool) $data['allow_separators'];
 
-        $plan = $svc->calculateBestPlan($zoneId, $items, $allowedCodes, $allowSeparators);
+        $plan = $svc->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedCodes, $allowSeparators);
 
         return Inertia::render('Palletizer/Index', [
             'result' => [
-                'province' => $destinationLabel,   // puedes renombrarlo a "destination" si quieres
-                'country_code' => $country,
+                'country_code' => $data['country_code'],
+                'destination' => $destinationLabel,
                 'zone_id' => $zoneId,
                 'items' => $items,
                 'plan' => $plan,
