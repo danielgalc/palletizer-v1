@@ -13,16 +13,15 @@ class MasterDataSeeder extends Seeder
         // BOX TYPES (demo)
         // -------------------------
         DB::table('box_types')->upsert([
-            ['code' => 'laptop',  'name' => 'Portátil',      'length_cm' => 40, 'width_cm' => 40, 'height_cm' => 12, 'weight_kg' => 4.00,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'mini_pc', 'name' => 'Mini PC (Tiny)','length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'weight_kg' => 3.00,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'tower',   'name' => 'Torre oficina', 'length_cm' => 60, 'width_cm' => 30, 'height_cm' => 25, 'weight_kg' => 10.00, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'laptop',  'name' => 'Portátil',       'length_cm' => 40, 'width_cm' => 40, 'height_cm' => 12, 'weight_kg' => 4.00,  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'mini_pc', 'name' => 'Mini PC (Tiny)', 'length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'weight_kg' => 3.00,  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'tower',   'name' => 'Torre oficina',  'length_cm' => 60, 'width_cm' => 30, 'height_cm' => 25, 'weight_kg' => 10.00, 'created_at' => now(), 'updated_at' => now()],
         ], ['code'], ['name', 'length_cm', 'width_cm', 'height_cm', 'weight_kg', 'updated_at']);
 
         // -------------------------
         // PALLET TYPES
         // -------------------------
         DB::table('pallet_types')->upsert([
-            // Ojo: en el PDF hay mini-quarter y quarter; ambos con base 120x80 en el documento de ejemplo.
             ['code' => 'mini_quarter', 'name' => 'Mini-quarter pallet', 'base_length_cm' => 120, 'base_width_cm' => 80,  'max_height_cm' => 110, 'max_weight_kg' => 300,  'created_at' => now(), 'updated_at' => now()],
             ['code' => 'quarter',      'name' => 'Quarter pallet',      'base_length_cm' => 120, 'base_width_cm' => 80,  'max_height_cm' => 110, 'max_weight_kg' => 300,  'created_at' => now(), 'updated_at' => now()],
             ['code' => 'half',         'name' => 'Half pallet',         'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 160, 'max_weight_kg' => 600,  'created_at' => now(), 'updated_at' => now()],
@@ -31,21 +30,19 @@ class MasterDataSeeder extends Seeder
             ['code' => 'full',         'name' => 'Full pallet',         'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 220, 'max_weight_kg' => 1200, 'created_at' => now(), 'updated_at' => now()],
         ], ['code'], ['name', 'base_length_cm', 'base_width_cm', 'max_height_cm', 'max_weight_kg', 'updated_at']);
 
-        // Helpers
         $palletId = fn (string $code) => DB::table('pallet_types')->where('code', $code)->value('id');
 
         // -------------------------
         // COUNTRIES
         // -------------------------
         DB::table('countries')->upsert([
-            ['code' => 'ES', 'name' => 'España',   'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'PT', 'name' => 'Portugal','created_at' => now(), 'updated_at' => now()],
-            ['code' => 'IT', 'name' => 'Italia',  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'RO', 'name' => 'Rumanía', 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'PL', 'name' => 'Polonia', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'ES', 'name' => 'España',    'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'PT', 'name' => 'Portugal', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'IT', 'name' => 'Italia',   'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'RO', 'name' => 'Rumanía',  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'PL', 'name' => 'Polonia',  'created_at' => now(), 'updated_at' => now()],
         ], ['code'], ['name', 'updated_at']);
 
-        // Helpers
         $countryId = fn (string $code) => DB::table('countries')->where('code', $code)->value('id');
 
         // -------------------------
@@ -59,24 +56,16 @@ class MasterDataSeeder extends Seeder
 
         $carrierId = fn (string $code) => DB::table('carriers')->where('code', $code)->value('id');
 
-        // Carrier IDs (los usaremos para sembrar tarifas)
-        $palletwaysId = $carrierId('palletways');
-        $euroFastId   = $carrierId('euro_fast');
-        $budgetId     = $carrierId('budget_freight');
-
         // -------------------------
         // ZONES
-        // - ES: zonas 1..9, 11..14
-        // - PT: zona 10
-        // - IT/RO/PL: zonas con nombres reales (región + ciudad principal)
         // -------------------------
-        $zoneIds = [];               // para Iberia por número (1..14)
+        $zoneIds = [];               // Iberia por número (1..14)
         $intlZoneIdsByName = [];     // por país y nombre (IT/RO/PL)
 
         // ES zones except 10
         $esId = $countryId('ES');
         for ($i = 1; $i <= 14; $i++) {
-            if ($i === 10) continue; // 10 lo reservamos para PT
+            if ($i === 10) continue;
             $zoneName = "Zona {$i}";
             DB::table('zones')->updateOrInsert(
                 ['country_id' => $esId, 'name' => $zoneName],
@@ -93,29 +82,11 @@ class MasterDataSeeder extends Seeder
         );
         $zoneIds[10] = DB::table('zones')->where('country_id', $ptId)->where('name', 'Zona 10')->value('id');
 
-        // IT/RO/PL real-ish zones (región + ciudad principal)
+        // IT/RO/PL zones
         $realZones = [
-            'IT' => [
-                'Lombardia (Milán)',
-                'Lazio (Roma)',
-                'Campania (Nápoles)',
-                'Veneto (Venecia)',
-                'Piemonte (Turín)',
-            ],
-            'PL' => [
-                'Mazowieckie (Varsovia)',
-                'Małopolskie (Cracovia)',
-                'Śląskie (Katowice)',
-                'Wielkopolskie (Poznań)',
-                'Pomorskie (Gdańsk)',
-            ],
-            'RO' => [
-                'București-Ilfov (Bucarest)',
-                'Cluj (Cluj-Napoca)',
-                'Timiș (Timișoara)',
-                'Iași',
-                'Constanța',
-            ],
+            'IT' => ['Lombardia (Milán)', 'Lazio (Roma)', 'Campania (Nápoles)', 'Veneto (Venecia)', 'Piemonte (Turín)'],
+            'PL' => ['Mazowieckie (Varsovia)', 'Małopolskie (Cracovia)', 'Śląskie (Katowice)', 'Wielkopolskie (Poznań)', 'Pomorskie (Gdańsk)'],
+            'RO' => ['București-Ilfov (Bucarest)', 'Cluj (Cluj-Napoca)', 'Timiș (Timișoara)', 'Iași', 'Constanța'],
         ];
 
         foreach ($realZones as $cc => $names) {
@@ -135,7 +106,7 @@ class MasterDataSeeder extends Seeder
         }
 
         // -------------------------
-        // PROVINCES por zona (tal y como aparecen en el PDF)
+        // PROVINCES (ES)
         // -------------------------
         $zoneProvinces = [
             1  => ['Cádiz', 'Córdoba', 'Granada', 'Jaen', 'Málaga', 'Sevilla'],
@@ -147,7 +118,6 @@ class MasterDataSeeder extends Seeder
             7  => ['Alicante', 'Asturias', 'Cantabria', 'Castellón', 'Guipuzcoa', 'Lérida', 'Tarragona', 'Vizcaya'],
             8  => ['Barcelona', 'Cáceres'],
             9  => ['Coruña', 'Gerona', 'Lugo', 'Orense', 'Pontevedra'],
-            // 10 es Portugal resto CP (no es “provincia” española) -> lo dejamos fuera del seeder de provinces
             11 => ['Mallorca'],
             12 => ['Ibiza y Menorca'],
             13 => ['Gran Canaria', 'Tenerife'],
@@ -164,12 +134,10 @@ class MasterDataSeeder extends Seeder
         }
 
         // -------------------------
-        // RATES (Zonas 1..12 con precio; 13/14 "Consultar precio")
-        // Fuente: tablas del PDF
+        // RATES PALLETWAYS (IBERIA) - base
         // -------------------------
         $rates = [];
 
-        // mini_quarter / quarter / half -> solo 1 pallet (una columna)
         $miniQuarter = [
             1 => 38.91, 2 => 41.21, 3 => 42.84, 4 => 44.50, 5 => 46.27, 6 => 51.26,
             7 => 53.38, 8 => 54.23, 9 => 55.40, 10 => 64.60, 11 => 91.11, 12 => 93.46,
@@ -183,17 +151,10 @@ class MasterDataSeeder extends Seeder
             7 => 74.78, 8 => 83.28, 9 => 92.40, 10 => 117.58, 11 => 169.71, 12 => 173.63,
         ];
 
-        foreach ($miniQuarter as $z => $price) {
-            $rates[] = ['zone' => $z, 'pallet' => 'mini_quarter', 'min' => 1, 'max' => 1, 'price' => $price];
-        }
-        foreach ($quarter as $z => $price) {
-            $rates[] = ['zone' => $z, 'pallet' => 'quarter', 'min' => 1, 'max' => 1, 'price' => $price];
-        }
-        foreach ($half as $z => $price) {
-            $rates[] = ['zone' => $z, 'pallet' => 'half', 'min' => 1, 'max' => 1, 'price' => $price];
-        }
+        foreach ($miniQuarter as $z => $price) $rates[] = ['zone' => $z, 'pallet' => 'mini_quarter', 'min' => 1, 'max' => 1, 'price' => $price];
+        foreach ($quarter as $z => $price)     $rates[] = ['zone' => $z, 'pallet' => 'quarter',      'min' => 1, 'max' => 1, 'price' => $price];
+        foreach ($half as $z => $price)        $rates[] = ['zone' => $z, 'pallet' => 'half',         'min' => 1, 'max' => 1, 'price' => $price];
 
-        // light -> 1..5 pallets
         $light = [
             1 => [65.76, 63.19, 60.05, 57.61, 56.91],
             2 => [70.46, 67.79, 64.57, 62.28, 61.38],
@@ -209,12 +170,9 @@ class MasterDataSeeder extends Seeder
             12 => [243.45, 239.49, 234.73, 223.65, 218.11],
         ];
         foreach ($light as $z => $prices) {
-            for ($i = 1; $i <= 5; $i++) {
-                $rates[] = ['zone' => $z, 'pallet' => 'light', 'min' => $i, 'max' => $i, 'price' => $prices[$i - 1]];
-            }
+            for ($i = 1; $i <= 5; $i++) $rates[] = ['zone' => $z, 'pallet' => 'light', 'min' => $i, 'max' => $i, 'price' => $prices[$i - 1]];
         }
 
-        // extra_light -> 1..3 pallets
         $extraLight = [
             1 => [64.96, 62.44, 59.30],
             2 => [69.59, 66.95, 63.75],
@@ -230,12 +188,9 @@ class MasterDataSeeder extends Seeder
             12 => [202.00, 201.22, 200.44],
         ];
         foreach ($extraLight as $z => $prices) {
-            for ($i = 1; $i <= 3; $i++) {
-                $rates[] = ['zone' => $z, 'pallet' => 'extra_light', 'min' => $i, 'max' => $i, 'price' => $prices[$i - 1]];
-            }
+            for ($i = 1; $i <= 3; $i++) $rates[] = ['zone' => $z, 'pallet' => 'extra_light', 'min' => $i, 'max' => $i, 'price' => $prices[$i - 1]];
         }
 
-        // full -> 1..5 pallets
         $full = [
             1 => [68.37, 65.81, 62.70, 60.39, 59.55],
             2 => [73.12, 70.47, 67.27, 64.95, 64.07],
@@ -251,10 +206,11 @@ class MasterDataSeeder extends Seeder
             12 => [282.00, 278.08, 274.15, 259.26, 252.21],
         ];
         foreach ($full as $z => $prices) {
-            for ($i = 1; $i <= 5; $i++) {
-                $rates[] = ['zone' => $z, 'pallet' => 'full', 'min' => $i, 'max' => $i, 'price' => $prices[$i - 1]];
-            }
+            for ($i = 1; $i <= 5; $i++) $rates[] = ['zone' => $z, 'pallet' => 'full', 'min' => $i, 'max' => $i, 'price' => $prices[$i - 1]];
         }
+
+        // Insert Palletways base rates
+        $palletwaysId = $carrierId('palletways');
 
         foreach ($rates as $r) {
             DB::table('rates')->updateOrInsert(
@@ -274,88 +230,72 @@ class MasterDataSeeder extends Seeder
         }
 
         // -------------------------
-        // RATES DEMO (ES/PT) para carriers ficticios
-        // - Para poder comparar transportistas también en España/Portugal,
-        //   derivamos las tarifas de Palletways aplicando multiplicadores.
-        // - Esto NO pretende ser real: solo crea una estructura coherente para pruebas.
+        // RATES (IBERIA) - EURO_FAST & BUDGET_FREIGHT
+        // Basados en Palletways pero con:
+        // - catálogo de pallets distinto
+        // - ajuste por tramo (1..5)
+        // - ajuste por "tipo" (full/half/...)
         // -------------------------
+        $euroFastId = $carrierId('euro_fast');
+        $budgetId   = $carrierId('budget_freight');
 
-        $carrierProfiles = [
+        // Qué "tarifas" (pallet_types) ofrece cada carrier en Iberia
+        $carrierOffer = [
+            'euro_fast' => ['quarter', 'half', 'extra_light', 'light', 'full'],
+            'budget_freight' => ['half', 'light', 'full'],
+        ];
+
+        // Ajuste por tramo: EuroFast penaliza 1 pallet pero mejora con volumen; Budget es barato siempre
+        $carrierTramoAdj = [
             'euro_fast' => [
-                'id' => $euroFastId,
-                // EuroFast: algo más caro en general, pero con mejores descuentos por volumen
-                'base_mult' => 1.06,
-                'discount_by_tramo' => [
-                    1 => 1.00,
-                    2 => 0.985,
-                    3 => 0.970,
-                    4 => 0.960,
-                    5 => 0.950,
-                ],
-                // Ajustes por tipo (simula que algunos "servicios" penalizan/bonifican ciertos tamaños)
-                'pallet_mult' => [
-                    'mini_quarter' => 1.02,
-                    'quarter' => 1.03,
-                    'half' => 1.04,
-                    'extra_light' => 1.06,
-                    'light' => 1.06,
-                    'full' => 1.08,
-                ],
-                // Ajuste por zona (islas suelen ser más caras)
-                'zone_mult' => [
-                    11 => 1.03,
-                    12 => 1.03,
-                ],
+                1 => 1.08,
+                2 => 1.04,
+                3 => 1.01,
+                4 => 0.99,
+                5 => 0.98,
             ],
             'budget_freight' => [
-                'id' => $budgetId,
-                // Budget: más barato en general, pero con descuentos por volumen más modestos
-                'base_mult' => 0.93,
-                'discount_by_tramo' => [
-                    1 => 1.00,
-                    2 => 0.995,
-                    3 => 0.985,
-                    4 => 0.980,
-                    5 => 0.975,
-                ],
-                'pallet_mult' => [
-                    'mini_quarter' => 0.95,
-                    'quarter' => 0.94,
-                    'half' => 0.93,
-                    'extra_light' => 0.93,
-                    'light' => 0.93,
-                    'full' => 0.95,
-                ],
-                'zone_mult' => [
-                    11 => 1.02,
-                    12 => 1.02,
-                ],
+                1 => 0.97,
+                2 => 0.95,
+                3 => 0.94,
+                4 => 0.93,
+                5 => 0.92,
             ],
         ];
 
-        foreach ($carrierProfiles as $profile) {
-            $cid = (int)($profile['id'] ?? 0);
-            if ($cid <= 0) continue;
+        // Ajuste por tipo de pallet
+        $typeAdj = [
+            'mini_quarter' => 1.02,
+            'quarter'      => 1.03,
+            'half'         => 1.04,
+            'extra_light'  => 1.00,
+            'light'        => 1.00,
+            'full'         => 1.06,
+        ];
+
+        foreach (['euro_fast' => $euroFastId, 'budget_freight' => $budgetId] as $carrierCode => $cid) {
+            $offer = $carrierOffer[$carrierCode] ?? [];
 
             foreach ($rates as $r) {
-                $zoneNum = (int)($r['zone'] ?? 0);
-                $pCode   = (string)($r['pallet'] ?? '');
-                $tramo   = (int)($r['min'] ?? 1);
+                // Solo Iberia zonas 1..12 (incluye PT zona 10)
+                if (($r['zone'] ?? 0) < 1 || ($r['zone'] ?? 0) > 12) continue;
 
-                $baseMult = (float)($profile['base_mult'] ?? 1.0);
-                $palletMult = (float)($profile['pallet_mult'][$pCode] ?? $baseMult);
-                $disc = (float)($profile['discount_by_tramo'][$tramo] ?? 1.0);
-                $zoneMult = (float)($profile['zone_mult'][$zoneNum] ?? 1.0);
+                // Solo los "pallet types" que ofrece el carrier
+                if (!in_array($r['pallet'], $offer, true)) continue;
 
-                $price = round(((float)$r['price']) * $palletMult * $disc * $zoneMult, 2);
+                $tramo = (int)($r['min'] ?? 1);
+                $adjTramo = $carrierTramoAdj[$carrierCode][$tramo] ?? 1.00;
+                $adjType  = $typeAdj[$r['pallet']] ?? 1.00;
+
+                $price = round(((float)$r['price']) * $adjTramo * $adjType, 2);
 
                 DB::table('rates')->updateOrInsert(
                     [
                         'carrier_id' => $cid,
-                        'zone_id' => $zoneIds[$zoneNum],
-                        'pallet_type_id' => $palletId($pCode),
-                        'min_pallets' => (int)$r['min'],
-                        'max_pallets' => (int)$r['max'],
+                        'zone_id' => $zoneIds[$r['zone']],
+                        'pallet_type_id' => $palletId($r['pallet']),
+                        'min_pallets' => $r['min'],
+                        'max_pallets' => $r['max'],
                     ],
                     [
                         'price_eur' => $price,
@@ -368,26 +308,21 @@ class MasterDataSeeder extends Seeder
 
         // -------------------------
         // RATES DEMO (IT/RO/PL) para 2 carriers
-        // - Simplificado: solo 'light' y 'full' en tramos 1..3
-        // - Se aplica a TODAS las zonas reales definidas arriba
         // -------------------------
         $demoPallets = ['light', 'full'];
         $demoTramos  = [1, 2, 3];
 
-        // Precios base por país (ajusta como quieras)
         $base = [
             'IT' => ['euro_fast' => 120, 'budget_freight' => 110],
             'RO' => ['euro_fast' => 150, 'budget_freight' => 135],
             'PL' => ['euro_fast' => 160, 'budget_freight' => 145],
         ];
 
-        // Multiplicadores por tipo de pallet
         $mult = [
             'light' => 1.00,
             'full'  => 1.18,
         ];
 
-        // Descuento por tramo (más pallets -> algo más barato por pallet)
         $disc = [
             1 => 1.00,
             2 => 0.97,
