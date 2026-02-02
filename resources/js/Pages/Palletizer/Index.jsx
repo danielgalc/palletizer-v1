@@ -79,7 +79,6 @@ function pricePerPallet(plan) {
 
 export default function Index({ result }) {
   const { data, setData, post, processing, errors } = useForm({
-    // ✅ Opción A: obligar a seleccionar país
     country_code: "",
     zone_id: null,
     province_id: null,
@@ -99,6 +98,12 @@ export default function Index({ result }) {
   const [palletTypes, setPalletTypes] = useState([]);
   const [loadingPalletTypes, setLoadingPalletTypes] = useState(true);
   const [palletTypesError, setPalletTypesError] = useState(null);
+
+  // Autocomplete zonas
+  const [zoneQuery, setZoneQuery] = useState("");
+  const [zoneOpen, setZoneOpen] = useState(false);
+  const [zoneHighlightIndex, setZoneHighlightIndex] = useState(0);
+  const zoneRef = useRef(null);
 
   // Autocomplete state
   const [query, setQuery] = useState("");
@@ -298,14 +303,17 @@ export default function Index({ result }) {
 
   useEffect(() => {
     const onDocClick = (e) => {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target)) {
-        setIsOpen(false);
-      }
+      const inProv = containerRef.current && containerRef.current.contains(e.target);
+      const inZone = zoneRef.current && zoneRef.current.contains(e.target);
+
+      if (!inProv) setIsOpen(false);
+      if (!inZone) setZoneOpen(false);
     };
+
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
+
 
   const onKeyDown = (e) => {
     if (!isOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -329,6 +337,66 @@ export default function Index({ result }) {
       }
     } else if (e.key === "Escape") {
       setIsOpen(false);
+    }
+  };
+
+  const selectedZoneObj = useMemo(() => {
+    return zones.find((z) => z.id === data.zone_id) || null;
+  }, [zones, data.zone_id]);
+
+  useEffect(() => {
+    if (selectedZoneObj && zoneQuery !== selectedZoneObj.name) {
+      setZoneQuery(selectedZoneObj.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.zone_id]);
+
+
+  const filteredZones = useMemo(() => {
+    const q = normalize(zoneQuery);
+    if (!q) return zones;
+
+    const starts = [];
+    const contains = [];
+
+    for (const z of zones) {
+      const nameN = normalize(z.name);
+      if (nameN.startsWith(q)) starts.push(z);
+      else if (nameN.includes(q)) contains.push(z);
+    }
+
+    return [...starts, ...contains].slice(0, 12);
+  }, [zones, zoneQuery]);
+
+  const selectZone = (z) => {
+    setData("zone_id", z.id);
+    setZoneQuery(z.name);
+    setZoneOpen(false);
+    setZoneHighlightIndex(0);
+  };
+
+  const onZoneKeyDown = (e) => {
+    if (!zoneOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      setZoneOpen(true);
+      return;
+    }
+    if (!zoneOpen) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setZoneHighlightIndex((i) => Math.min(i + 1, filteredZones.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setZoneHighlightIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      if (filteredZones[zoneHighlightIndex]) {
+        e.preventDefault();
+        selectZone(filteredZones[zoneHighlightIndex]);
+      } else {
+        setZoneOpen(false);
+      }
+    } else if (e.key === "Escape") {
+      setZoneOpen(false);
     }
   };
 
@@ -477,8 +545,14 @@ export default function Index({ result }) {
   const countrySelected = !!data.country_code;
   const isES = (data.country_code || "ES") === "ES";
 
-  // ✅ Opción A: destino solo es OK si hay país seleccionado
-  const destinationOk = countrySelected && (
+  const countryName = useMemo(() => {
+    const code = result?.country_code || data.country_code;
+    if (!code) return null;
+    return countries.find((c) => c.code === code)?.name || code;
+  }, [countries, result?.country_code, data.country_code]);
+
+
+  const destinationOk = !countrySelected ? false : (
     isES
       ? (
         !loadingProvinces &&
@@ -620,7 +694,7 @@ export default function Index({ result }) {
                 }}
                 className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
               >
-                {/* ✅ placeholder */}
+                {/* placeholder */}
                 <option value="" disabled>
                   Selecciona país…
                 </option>
@@ -717,24 +791,50 @@ export default function Index({ result }) {
             ) : (
               <Field
                 label="Zona destino"
-                hint={destinationDisabled ? "Selecciona primero un país." : "Selecciona la zona para el país elegido"}
+                hint={selectedZoneObj ? `Seleccionada: ${selectedZoneObj.name}` : "Escribe para buscar (ej. zona 1, zona 10...)"}
                 error={errors.zone_id}
               >
-                <select
-                  value={data.zone_id ?? ""}
-                  disabled={destinationDisabled || loadingZones || !!zonesError}
-                  onChange={(e) => setData("zone_id", e.target.value ? Number(e.target.value) : null)}
-                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
-                >
-                  <option value="">
-                    {destinationDisabled ? "Selecciona país primero…" : (loadingZones ? "Cargando…" : "Selecciona zona…")}
-                  </option>
-                  {zones.map((z) => (
-                    <option key={z.id} value={z.id}>
-                      {z.name}
-                    </option>
-                  ))}
-                </select>
+                <div ref={zoneRef} className="relative">
+                  <input
+                    value={zoneQuery}
+                    disabled={loadingZones || !!zonesError}
+                    onChange={(e) => {
+                      setZoneQuery(e.target.value);
+                      setZoneOpen(true);
+                      setZoneHighlightIndex(0);
+                      setData("zone_id", null); // importante: si empieza a escribir, invalida selección anterior
+                    }}
+                    onFocus={() => setZoneOpen(true)}
+                    onKeyDown={onZoneKeyDown}
+                    placeholder={loadingZones ? "Cargando..." : "Buscar zona..."}
+                    className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                  />
+
+                  {zoneOpen && !loadingZones && !zonesError && (
+                    <div className="absolute left-0 right-0 top-[42px] z-20 max-h-72 overflow-auto rounded-xl border border-ink-200 bg-white shadow-soft">
+                      {filteredZones.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-ink-500">Sin resultados.</div>
+                      ) : (
+                        filteredZones.map((z, idx) => (
+                          <div
+                            key={z.id}
+                            onMouseEnter={() => setZoneHighlightIndex(idx)}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              selectZone(z);
+                            }}
+                            className={[
+                              "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
+                              idx === zoneHighlightIndex ? "bg-ink-50" : "bg-white",
+                            ].join(" ")}
+                          >
+                            <span className="text-ink-800">{z.name}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 {zonesError && (
                   <div className="mt-2 text-xs font-semibold text-red-600">
@@ -742,6 +842,7 @@ export default function Index({ result }) {
                   </div>
                 )}
               </Field>
+
             )}
 
             {/* Tipos de pallet */}
@@ -1022,10 +1123,19 @@ export default function Index({ result }) {
               </div>
 
               <div className="rounded-xl border border-ink-100 p-4">
-                <div className="text-sm font-extrabold text-ink-900">{best.pallet_type_name}</div>
-                <div className="mt-1 text-xs text-ink-500">
-                  Destino: {result.destination} · Zona {result.zone_id}
+                <div className="flex gap-3">
+                  <div className="text-md text-ink-900">
+                    {best?.carrier_name && (
+                      <span><b>Transportista:</b> <i>{best.carrier_name}</i></span>
+                    )}</div>
+                  <div className="text-md text-ink-900"><b>Tarifa:</b> <i>{best.pallet_type_name}</i></div>
                 </div>
+                <div className="mt-1 text-xs text-ink-500">
+                  Destino: <b>{countryName ?? "—"}</b>
+                  {result?.destination ? <> · <b>{result.destination}</b></> : null}
+                  {result?.country_code === "ES" && result?.zone_id ? <> · Zona <b>{result.zone_id}</b></> : null}
+                </div>
+
               </div>
 
               {recommendations.length > 0 && (
