@@ -813,7 +813,8 @@ class PalletizationService
         int $zoneId,
         array $items,
         ?array $allowedPalletTypeCodes = null,
-        bool $allowSeparators = true
+        bool $allowSeparators = true,
+        ?array $carrierIds = null
     ): array {
         $carrierRows = DB::table('rates')
             ->join('carriers', 'carriers.id', '=', 'rates.carrier_id')
@@ -823,8 +824,8 @@ class PalletizationService
             ->distinct()
             ->get();
 
-        if ($carrierRows->isEmpty()) {
-            return ['error' => 'No hay transportistas con tarifas para esa zona.'];
+        if (is_array($carrierIds) && count($carrierIds) > 0) {
+            $carrierRows->whereIn('carriers.id', array_map('intval', $carrierIds));
         }
 
         $allCandidates = [];

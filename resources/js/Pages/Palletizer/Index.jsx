@@ -89,6 +89,9 @@ export default function Index({ result }) {
 
     pallet_mode: "auto",
     pallet_type_codes: [],
+
+    carrier_mode: "auto",
+    carrier_ids: [],
   });
 
   const [provinces, setProvinces] = useState([]);
@@ -98,6 +101,11 @@ export default function Index({ result }) {
   const [palletTypes, setPalletTypes] = useState([]);
   const [loadingPalletTypes, setLoadingPalletTypes] = useState(true);
   const [palletTypesError, setPalletTypesError] = useState(null);
+
+  // Transportistas
+  const [carriers, setCarriers] = useState([]);
+  const [loadingCarriers, setLoadingCarriers] = useState(true);
+  const [carriersError, setCarriersError] = useState(null);
 
   // Autocomplete zonas
   const [zoneQuery, setZoneQuery] = useState("");
@@ -199,7 +207,7 @@ export default function Index({ result }) {
             const firstKey = Object.keys(data.errors)[0];
             if (firstKey) errText = data.errors[firstKey][0];
           }
-        } catch (_) { }
+        } catch (_) {}
         throw new Error(errText);
       }
 
@@ -314,7 +322,6 @@ export default function Index({ result }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-
   const onKeyDown = (e) => {
     if (!isOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       setIsOpen(true);
@@ -350,7 +357,6 @@ export default function Index({ result }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.zone_id]);
-
 
   const filteredZones = useMemo(() => {
     const q = normalize(zoneQuery);
@@ -409,7 +415,7 @@ export default function Index({ result }) {
         post(route("palletizer.calculate"), { preserveScroll: true });
         return;
       }
-    } catch (_) { }
+    } catch (_) {}
 
     post("/palletizer/calculate", { preserveScroll: true });
   };
@@ -433,6 +439,8 @@ export default function Index({ result }) {
         allow_separators: !!data.allow_separators,
         pallet_mode: data.pallet_mode,
         pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
+        carrier_mode: data.carrier_mode,
+        carrier_ids: Array.isArray(data.carrier_ids) ? data.carrier_ids : [],
       };
 
       const res = await fetch("/api/export/best-plan", {
@@ -446,7 +454,7 @@ export default function Index({ result }) {
         try {
           const j = await res.json();
           if (j?.message) msg = j.message;
-        } catch (_) { }
+        } catch (_) {}
         throw new Error(msg);
       }
 
@@ -489,6 +497,8 @@ export default function Index({ result }) {
         allow_separators: !!data.allow_separators,
         pallet_mode: data.pallet_mode,
         pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
+        carrier_mode: data.carrier_mode,
+        carrier_ids: Array.isArray(data.carrier_ids) ? data.carrier_ids : [],
       };
 
       const res = await fetch("/api/export/best-plan-pdf", {
@@ -508,7 +518,7 @@ export default function Index({ result }) {
             const t = await res.text();
             if (t) msg = t;
           }
-        } catch (_) { }
+        } catch (_) {}
         throw new Error(msg);
       }
 
@@ -541,6 +551,12 @@ export default function Index({ result }) {
   };
 
   const manualOk = data.pallet_mode !== "manual" || data.pallet_type_codes.length > 0;
+  const carrierOk =
+    data.carrier_mode !== "manual" ||
+    (!loadingCarriers &&
+      !carriersError &&
+      Array.isArray(data.carrier_ids) &&
+      data.carrier_ids.length > 0);
 
   const countrySelected = !!data.country_code;
   const isES = (data.country_code || "ES") === "ES";
@@ -551,22 +567,14 @@ export default function Index({ result }) {
     return countries.find((c) => c.code === code)?.name || code;
   }, [countries, result?.country_code, data.country_code]);
 
-
-  const destinationOk = !countrySelected ? false : (
-    isES
-      ? (
-        !loadingProvinces &&
-        !provincesError &&
-        data.province_id !== null &&
-        provinces.some((p) => p.id === data.province_id)
-      )
-      : (
-        !loadingZones &&
-        !zonesError &&
-        data.zone_id !== null &&
-        zones.some((z) => z.id === data.zone_id)
-      )
-  );
+  const destinationOk = !countrySelected
+    ? false
+    : isES
+    ? !loadingProvinces &&
+      !provincesError &&
+      data.province_id !== null &&
+      provinces.some((p) => p.id === data.province_id)
+    : !loadingZones && !zonesError && data.zone_id !== null && zones.some((z) => z.id === data.zone_id);
 
   const canSubmit =
     !processing &&
@@ -574,6 +582,7 @@ export default function Index({ result }) {
     !countriesError &&
     countrySelected &&
     manualOk &&
+    carrierOk &&
     destinationOk;
 
   const best = result?.plan?.best || null;
@@ -605,6 +614,33 @@ export default function Index({ result }) {
         if (cancelled) return;
         setLoadingCountries(false);
         setCountriesError(e.message || "Error cargando países");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Fetch de transportistas (para el modo Manual)
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCarriers(true);
+    setCarriersError(null);
+
+    fetch("/api/carriers")
+      .then((r) => {
+        if (!r.ok) throw new Error("No se pudieron cargar transportistas");
+        return r.json();
+      })
+      .then((list) => {
+        if (cancelled) return;
+        setCarriers(Array.isArray(list) ? list : []);
+        setLoadingCarriers(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadingCarriers(false);
+        setCarriersError(e.message || "Error cargando transportistas");
       });
 
     return () => {
@@ -656,9 +692,7 @@ export default function Index({ result }) {
         <Card className="p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h1 className="text-lg font-extrabold tracking-tight text-ink-900">
-                Planificación de pedido
-              </h1>
+              <h1 className="text-lg font-extrabold tracking-tight text-ink-900">Planificación de pedido</h1>
             </div>
             <div className="h-10 w-1 rounded-full bg-brand-500" />
           </div>
@@ -727,8 +761,8 @@ export default function Index({ result }) {
                   selectedProvinceObj?.zone_name
                     ? `Seleccionada: ${selectedProvinceObj.name} · ${selectedProvinceObj.zone_name}`
                     : destinationDisabled
-                      ? "Selecciona primero un país."
-                      : "Escribe para buscar (ej. Zara, Mad...)"
+                    ? "Selecciona primero un país."
+                    : "Escribe para buscar (ej. Zara, Mad...)"
                 }
                 error={errors.province_id}
               >
@@ -744,11 +778,7 @@ export default function Index({ result }) {
                     onFocus={() => setIsOpen(true)}
                     onKeyDown={onKeyDown}
                     placeholder={
-                      destinationDisabled
-                        ? "Selecciona país primero…"
-                        : loadingProvinces
-                          ? "Cargando..."
-                          : "Buscar provincia..."
+                      destinationDisabled ? "Selecciona país primero…" : loadingProvinces ? "Cargando..." : "Buscar provincia..."
                     }
                     className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
                   />
@@ -772,9 +802,7 @@ export default function Index({ result }) {
                             ].join(" ")}
                           >
                             <span className="text-ink-800">{p.name}</span>
-                            <span className="whitespace-nowrap text-xs text-ink-500">
-                              {p.zone_name}
-                            </span>
+                            <span className="whitespace-nowrap text-xs text-ink-500">{p.zone_name}</span>
                           </div>
                         ))
                       )}
@@ -842,8 +870,117 @@ export default function Index({ result }) {
                   </div>
                 )}
               </Field>
-
             )}
+
+            {/* Transportistas */}
+            <div className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
+              <div className="text-sm font-extrabold text-ink-900">Transportistas</div>
+
+              <div className="mt-3 flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm text-ink-800">
+                  <input
+                    type="radio"
+                    name="carrier_mode"
+                    value="auto"
+                    checked={data.carrier_mode === "auto"}
+                    onChange={() => {
+                      setData("carrier_mode", "auto");
+                      setData("carrier_ids", []); // en auto no limitamos
+                    }}
+                    className="h-4 w-4 accent-brand-500"
+                  />
+                  Auto (todos)
+                </label>
+
+                <label className="flex items-center gap-2 text-sm text-ink-800">
+                  <input
+                    type="radio"
+                    name="carrier_mode"
+                    value="manual"
+                    checked={data.carrier_mode === "manual"}
+                    onChange={() => {
+                      setData("carrier_mode", "manual");
+                      // no preseleccionamos: el usuario elige
+                      if (!Array.isArray(data.carrier_ids)) setData("carrier_ids", []);
+                    }}
+                    className="h-4 w-4 accent-brand-500"
+                  />
+                  Sé qué transportista voy a utilizar (seleccionar)
+                </label>
+              </div>
+
+              {data.carrier_mode === "auto" ? (
+                <div className="mt-3 text-sm text-ink-500">
+                  Se evaluarán automáticamente todos los transportistas disponibles para el destino.
+                </div>
+              ) : loadingCarriers ? (
+                <div className="mt-3 text-sm text-ink-500">Cargando transportistas…</div>
+              ) : carriersError ? (
+                <div className="mt-3 text-sm font-semibold text-red-600">
+                  {carriersError} (revisa GET /api/carriers)
+                </div>
+              ) : carriers.length === 0 ? (
+                <div className="mt-3 text-sm text-ink-500">No hay transportistas disponibles.</div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setData("carrier_ids", carriers.map((c) => c.id))}
+                      className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
+                    >
+                      Seleccionar todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setData("carrier_ids", [])}
+                      className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
+                    >
+                      Quitar todos
+                    </button>
+
+                    <span className="ml-auto inline-flex items-center text-xs font-semibold text-ink-600">
+                      Seleccionados: {Array.isArray(data.carrier_ids) ? data.carrier_ids.length : 0}/{carriers.length}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-2">
+                    {carriers.map((c) => {
+                      const checked = Array.isArray(data.carrier_ids) && data.carrier_ids.includes(c.id);
+                      return (
+                        <label key={c.id} className="flex items-center gap-2 text-sm text-ink-800">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const id = c.id;
+                              const prev = Array.isArray(data.carrier_ids) ? data.carrier_ids : [];
+                              const next = e.target.checked ? [...prev, id] : prev.filter((x) => x !== id);
+                              setData("carrier_ids", next);
+                            }}
+                            className="h-4 w-4 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
+                          />
+                          <span className="font-semibold">{c.name ?? c.code}</span>
+                          {c.code ? <span className="text-xs text-ink-500">({c.code})</span> : null}
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {data.carrier_mode === "manual" &&
+                    Array.isArray(data.carrier_ids) &&
+                    data.carrier_ids.length === 0 && (
+                      <div className="text-xs font-semibold text-red-600">
+                        Selecciona al menos un transportista o usa modo Auto.
+                      </div>
+                    )}
+
+                  {errors.carrier_ids && (
+                    <div className="text-xs font-semibold text-red-600">{errors.carrier_ids}</div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Tipos de pallet */}
             <div className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
@@ -932,9 +1069,7 @@ export default function Index({ result }) {
                   )}
                 </div>
               ) : (
-                <div className="mt-3 text-sm text-ink-500">
-                  Se evaluarán automáticamente todos los tipos disponibles.
-                </div>
+                <div className="mt-3 text-sm text-ink-500">Se evaluarán automáticamente todos los tipos disponibles.</div>
               )}
             </div>
 
@@ -948,17 +1083,13 @@ export default function Index({ result }) {
                   className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
                 />
                 <div>
-                  <div className="text-sm font-extrabold text-ink-900">
-                    Permitir separador para capas mixtas
-                  </div>
+                  <div className="text-sm font-extrabold text-ink-900">Permitir separador para capas mixtas</div>
                   <div className="mt-1 text-xs text-ink-500">
                     Si está activado, se puede rellenar una capa con otros tipos aunque tengan distinta altura,
                     contabilizando separadores. Si está desactivado, solo se rellena con cajas de la misma altura.
                   </div>
                   {errors.allow_separators && (
-                    <div className="mt-2 text-xs font-semibold text-red-600">
-                      {errors.allow_separators}
-                    </div>
+                    <div className="mt-2 text-xs font-semibold text-red-600">{errors.allow_separators}</div>
                   )}
                 </div>
               </label>
@@ -968,16 +1099,12 @@ export default function Index({ result }) {
             <details className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
               <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-ink-900">
                 <span>Datos de cajas (actual)</span>
-                <span className="text-xs font-semibold text-ink-500">
-                  {boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}
-                </span>
+                <span className="text-xs font-semibold text-ink-500">{boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}</span>
               </summary>
 
               <div className="mt-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs text-ink-500">
-                    Valores usados para el cálculo
-                  </div>
+                  <div className="text-xs text-ink-500">Valores usados para el cálculo</div>
 
                   <button
                     type="button"
@@ -1003,17 +1130,14 @@ export default function Index({ result }) {
                           <span className="text-xs font-semibold text-ink-500">{b.code}</span>
                         </div>
                         <div className="mt-2 text-xs text-ink-600">
-                          {b.length_cm}×{b.width_cm}×{b.height_cm} cm ·{" "}
-                          {Number(b.weight_kg).toFixed(2)} kg/caja
+                          {b.length_cm}×{b.width_cm}×{b.height_cm} cm · {Number(b.weight_kg).toFixed(2)} kg/caja
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
 
-                <div className="mt-2 text-xs text-ink-500">
-                  Estos valores se usan para calcular capas, altura y peso.
-                </div>
+                <div className="mt-2 text-xs text-ink-500">Estos valores se usan para calcular capas, altura y peso.</div>
               </div>
             </details>
 
@@ -1065,9 +1189,7 @@ export default function Index({ result }) {
             </button>
 
             {exportError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
-                {exportError}
-              </div>
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{exportError}</div>
             )}
           </form>
         </Card>
@@ -1076,11 +1198,7 @@ export default function Index({ result }) {
         <Card className="p-5">
           <div className="mx-auto flex items-center justify-center px-4 py-2">
             <div className="h-12 w-52 overflow-hidden flex items-center justify-center">
-              <img
-                src="/palletizer.png"
-                alt="Palletizer"
-                className="h-30 mt-1 w-auto object-contain"
-              />
+              <img src="/palletizer.png" alt="Palletizer" className="h-30 mt-1 w-auto object-contain" />
             </div>
           </div>
           <div className="flex items-center justify-between">
@@ -1093,9 +1211,7 @@ export default function Index({ result }) {
               Introduce los datos y pulsa <b>Calcular</b>.
             </div>
           ) : result?.plan?.error ? (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {result.plan.error}
-            </div>
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{result.plan.error}</div>
           ) : best ? (
             <div className="mt-4 space-y-4">
               {warnings.length > 0 && (
@@ -1106,9 +1222,7 @@ export default function Index({ result }) {
                       <li key={i}>
                         {w.message}
                         {w?.details?.boxes !== undefined && (
-                          <span className="text-amber-800">
-                            {" "} (último pallet: {w.details.boxes} cajas)
-                          </span>
+                          <span className="text-amber-800"> (último pallet: {w.details.boxes} cajas)</span>
                         )}
                       </li>
                     ))}
@@ -1126,16 +1240,30 @@ export default function Index({ result }) {
                 <div className="flex gap-3">
                   <div className="text-md text-ink-900">
                     {best?.carrier_name && (
-                      <span><b>Transportista:</b> <i>{best.carrier_name}</i></span>
-                    )}</div>
-                  <div className="text-md text-ink-900"><b>Tarifa:</b> <i>{best.pallet_type_name}</i></div>
+                      <span>
+                        <b>Transportista:</b> <i>{best.carrier_name}</i>
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-md text-ink-900">
+                    <b>Tarifa:</b> <i>{best.pallet_type_name}</i>
+                  </div>
                 </div>
                 <div className="mt-1 text-xs text-ink-500">
                   Destino: <b>{countryName ?? "—"}</b>
-                  {result?.destination ? <> · <b>{result.destination}</b></> : null}
-                  {result?.country_code === "ES" && result?.zone_id ? <> · Zona <b>{result.zone_id}</b></> : null}
+                  {result?.destination ? (
+                    <>
+                      {" "}
+                      · <b>{result.destination}</b>
+                    </>
+                  ) : null}
+                  {result?.country_code === "ES" && result?.zone_id ? (
+                    <>
+                      {" "}
+                      · Zona <b>{result.zone_id}</b>
+                    </>
+                  ) : null}
                 </div>
-
               </div>
 
               {recommendations.length > 0 && (
@@ -1148,12 +1276,12 @@ export default function Index({ result }) {
                         <div className="text-sm font-semibold text-ink-800">{r.message}</div>
 
                         <div className="mt-1 text-xs text-ink-600">
-                          Diferencia: <b>{Number(r.delta_pct).toFixed(2)}%</b> ·
-                          Best: <b>{fmtEUR(r.best_total)}</b> ·
-                          Alt: <b>{fmtEUR(r.alt_total)}</b>
+                          Diferencia: <b>{Number(r.delta_pct).toFixed(2)}%</b> · Best: <b>{fmtEUR(r.best_total)}</b> · Alt:{" "}
+                          <b>{fmtEUR(r.alt_total)}</b>
                           {r?.alt?.pallet_count !== undefined ? (
                             <>
-                              {" "}· Pallets alt: <b>{fmtNum(r.alt.pallet_count)}</b>
+                              {" "}
+                              · Pallets alt: <b>{fmtNum(r.alt.pallet_count)}</b>
                             </>
                           ) : null}
                         </div>
@@ -1178,9 +1306,15 @@ export default function Index({ result }) {
                       <div key={idx} className="rounded-xl border border-ink-100 bg-ink-50 p-4">
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                           <div className="font-extrabold text-ink-900">Pallet #{idx + 1}</div>
-                          <div>Torres: <b>{p.tower}</b></div>
-                          <div>Portátiles: <b>{p.laptop}</b></div>
-                          <div>Minis: <b>{p.mini_pc}</b></div>
+                          <div>
+                            Torres: <b>{p.tower}</b>
+                          </div>
+                          <div>
+                            Portátiles: <b>{p.laptop}</b>
+                          </div>
+                          <div>
+                            Minis: <b>{p.mini_pc}</b>
+                          </div>
                           {"separators_used" in p && (
                             <div className="text-ink-600">
                               Separadores: <b>{p.separators_used}</b>
@@ -1196,9 +1330,7 @@ export default function Index({ result }) {
 
                         {Array.isArray(p.layers) && p.layers.length > 0 && (
                           <details className="mt-3">
-                            <summary className="cursor-pointer text-sm font-semibold text-ink-800">
-                              Ver capas
-                            </summary>
+                            <summary className="cursor-pointer text-sm font-semibold text-ink-800">Ver capas</summary>
 
                             <div className="mt-3 space-y-2">
                               {p.layers.map((layer, i) => (
@@ -1210,8 +1342,8 @@ export default function Index({ result }) {
                                     {layer.slots_empty > 0 ? ` · huecos ${layer.slots_empty}` : ""}
                                   </div>
                                   <div className="mt-1 text-sm text-ink-800">
-                                    Torres: <b>{layer.counts?.tower ?? 0}</b> · Portátiles:{" "}
-                                    <b>{layer.counts?.laptop ?? 0}</b> · Minis: <b>{layer.counts?.mini_pc ?? 0}</b>
+                                    Torres: <b>{layer.counts?.tower ?? 0}</b> · Portátiles: <b>{layer.counts?.laptop ?? 0}</b>{" "}
+                                    · Minis: <b>{layer.counts?.mini_pc ?? 0}</b>
                                   </div>
                                 </div>
                               ))}
@@ -1224,111 +1356,108 @@ export default function Index({ result }) {
                 </details>
               )}
 
-              {metrics && (() => {
-                const isMixed = !!metrics?.mixed;
-                const mixTypes = metrics?.types || null;
-                const mixCosts = metrics?.cost_breakdown || null;
-                return (
-                  <details className="rounded-xl border border-ink-100 p-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-ink-800">
-                      Métricas de cálculo
-                    </summary>
+              {metrics &&
+                (() => {
+                  const isMixed = !!metrics?.mixed;
+                  const mixTypes = metrics?.types || null;
+                  const mixCosts = metrics?.cost_breakdown || null;
+                  return (
+                    <details className="rounded-xl border border-ink-100 p-4">
+                      <summary className="cursor-pointer text-sm font-semibold text-ink-800">Métricas de cálculo</summary>
 
-                    <div className="mt-4 space-y-4">
-                      {palletMeta && (
-                        <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
-                          <div className="text-sm font-extrabold text-ink-900">Pallet (límites)</div>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                            <Stat label="L (cm)" value={fmtNum(palletMeta.L_cm ?? palletMeta.L)} />
-                            <Stat label="W (cm)" value={fmtNum(palletMeta.W_cm ?? palletMeta.W)} />
-                            <Stat label="H máx (cm)" value={fmtNum(palletMeta.H_cm ?? palletMeta.H)} />
-                            <Stat label="Kg máx" value={fmtNum(palletMeta.max_kg ?? palletMeta.kg)} />
+                      <div className="mt-4 space-y-4">
+                        {palletMeta && (
+                          <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                            <div className="text-sm font-extrabold text-ink-900">Pallet (límites)</div>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                              <Stat label="L (cm)" value={fmtNum(palletMeta.L_cm ?? palletMeta.L)} />
+                              <Stat label="W (cm)" value={fmtNum(palletMeta.W_cm ?? palletMeta.W)} />
+                              <Stat label="H máx (cm)" value={fmtNum(palletMeta.H_cm ?? palletMeta.H)} />
+                              <Stat label="Kg máx" value={fmtNum(palletMeta.max_kg ?? palletMeta.kg)} />
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {isMixed && (
-                        <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
-                          <div className="text-sm font-extrabold text-ink-900">Plan mixto</div>
+                        {isMixed && (
+                          <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                            <div className="text-sm font-extrabold text-ink-900">Plan mixto</div>
 
-                          {mixTypes && (
+                            {mixTypes && (
+                              <div className="mt-3 overflow-x-auto">
+                                <table className="min-w-[420px] w-full border-separate border-spacing-0">
+                                  <thead>
+                                    <tr className="text-left text-xs text-ink-500">
+                                      <th className="py-2 pr-3">Tipo</th>
+                                      <th className="py-2 pr-3">Pallets</th>
+                                      <th className="py-2 pr-3">Coste</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="text-sm text-ink-800">
+                                    {Object.entries(mixTypes).map(([code, count]) => (
+                                      <tr key={code} className="border-t border-ink-100">
+                                        <td className="py-2 pr-3 font-semibold">{code}</td>
+                                        <td className="py-2 pr-3">{count}</td>
+                                        <td className="py-2 pr-3">{fmtEUR(mixCosts?.[code])}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+
+                            <div className="mt-3 text-xs text-ink-500">
+                              Nota: en planes mixtos el “€/pallet” mostrado es el promedio (total / nº pallets).
+                            </div>
+                          </div>
+                        )}
+
+                        {perType && (
+                          <div className="rounded-xl border border-ink-100 p-4">
+                            <div className="text-sm font-extrabold text-ink-900">Cajas por tipo</div>
                             <div className="mt-3 overflow-x-auto">
-                              <table className="min-w-[420px] w-full border-separate border-spacing-0">
+                              <table className="min-w-[520px] w-full border-separate border-spacing-0">
                                 <thead>
                                   <tr className="text-left text-xs text-ink-500">
                                     <th className="py-2 pr-3">Tipo</th>
-                                    <th className="py-2 pr-3">Pallets</th>
-                                    <th className="py-2 pr-3">Coste</th>
+                                    <th className="py-2 pr-3">Cajas/capa</th>
+                                    <th className="py-2 pr-3">Altura (cm)</th>
+                                    <th className="py-2 pr-3">Peso/caja (kg)</th>
                                   </tr>
                                 </thead>
                                 <tbody className="text-sm text-ink-800">
-                                  {Object.entries(mixTypes).map(([code, count]) => (
-                                    <tr key={code} className="border-t border-ink-100">
-                                      <td className="py-2 pr-3 font-semibold">{code}</td>
-                                      <td className="py-2 pr-3">{count}</td>
-                                      <td className="py-2 pr-3">{fmtEUR(mixCosts?.[code])}</td>
-                                    </tr>
-                                  ))}
+                                  {["tower", "laptop", "mini_pc"].map((code) => {
+                                    const t = perType?.[code];
+                                    if (!t) return null;
+                                    return (
+                                      <tr key={code} className="border-t border-ink-100">
+                                        <td className="py-2 pr-3 font-semibold">
+                                          {code === "tower" ? "Torres" : code === "laptop" ? "Portátiles" : "Mini PCs"}
+                                        </td>
+                                        <td className="py-2 pr-3">{fmtNum(t.per_layer)}</td>
+                                        <td className="py-2 pr-3">{fmtNum(t.height_cm)}</td>
+                                        <td className="py-2 pr-3">{fmtNum(t.weight_kg)}</td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
-                          )}
-
-                          <div className="mt-3 text-xs text-ink-500">
-                            Nota: en planes mixtos el “€/pallet” mostrado es el promedio (total / nº pallets).
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {perType && (
-                        <div className="rounded-xl border border-ink-100 p-4">
-                          <div className="text-sm font-extrabold text-ink-900">Cajas por tipo</div>
-                          <div className="mt-3 overflow-x-auto">
-                            <table className="min-w-[520px] w-full border-separate border-spacing-0">
-                              <thead>
-                                <tr className="text-left text-xs text-ink-500">
-                                  <th className="py-2 pr-3">Tipo</th>
-                                  <th className="py-2 pr-3">Cajas/capa</th>
-                                  <th className="py-2 pr-3">Altura (cm)</th>
-                                  <th className="py-2 pr-3">Peso/caja (kg)</th>
-                                </tr>
-                              </thead>
-                              <tbody className="text-sm text-ink-800">
-                                {["tower", "laptop", "mini_pc"].map((code) => {
-                                  const t = perType?.[code];
-                                  if (!t) return null;
-                                  return (
-                                    <tr key={code} className="border-t border-ink-100">
-                                      <td className="py-2 pr-3 font-semibold">
-                                        {code === "tower" ? "Torres" : code === "laptop" ? "Portátiles" : "Mini PCs"}
-                                      </td>
-                                      <td className="py-2 pr-3">{fmtNum(t.per_layer)}</td>
-                                      <td className="py-2 pr-3">{fmtNum(t.height_cm)}</td>
-                                      <td className="py-2 pr-3">{fmtNum(t.weight_kg)}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                        {metrics?.note && (
+                          <div className="text-xs text-ink-500">
+                            <b>Nota:</b> {metrics.note}
                           </div>
-                        </div>
-                      )}
-
-                      {metrics?.note && (
-                        <div className="text-xs text-ink-500">
-                          <b>Nota:</b> {metrics.note}
-                        </div>
-                      )}
-                    </div>
-                  </details>
-                );
-              })()}
+                        )}
+                      </div>
+                    </details>
+                  );
+                })()}
 
               {alternatives.length > 0 && (
                 <details className="rounded-xl border border-ink-100 p-4">
-                  <summary className="cursor-pointer text-sm font-semibold text-ink-800">
-                    Alternativas
-                  </summary>
+                  <summary className="cursor-pointer text-sm font-semibold text-ink-800">Alternativas</summary>
 
                   <div className="mt-4 overflow-x-auto">
                     <table className="min-w-[620px] w-full border-separate border-spacing-0">
@@ -1346,9 +1475,7 @@ export default function Index({ result }) {
                             <td className="py-2 pr-3 font-semibold">{a.pallet_type_name}</td>
                             <td className="py-2 pr-3">{fmtNum(a.pallet_count)}</td>
                             <td className="py-2 pr-3">
-                              <div className="text-sm font-semibold text-ink-800">
-                                {fmtEUR(pricePerPallet(a))}
-                              </div>
+                              <div className="text-sm font-semibold text-ink-800">{fmtEUR(pricePerPallet(a))}</div>
                             </td>
                             <td className="py-2 pr-3">{fmtEUR(a.total_price)}</td>
                           </tr>
@@ -1414,9 +1541,7 @@ export default function Index({ result }) {
             <div className="flex items-start justify-between gap-4 border-b border-ink-100 p-5">
               <div>
                 <div className="text-lg font-extrabold text-ink-900">Configuración de cajas</div>
-                <div className="mt-1 text-sm text-ink-500">
-                  Cambia dimensiones y peso por tipo. Afecta a la simulación.
-                </div>
+                <div className="mt-1 text-sm text-ink-500">Cambia dimensiones y peso por tipo. Afecta a la simulación.</div>
               </div>
 
               <button
@@ -1465,11 +1590,16 @@ export default function Index({ result }) {
                         const KG = Number(b.weight_kg);
 
                         const rowValid =
-                          b.name && b.name.trim().length > 0 &&
-                          Number.isFinite(L) && L > 0 &&
-                          Number.isFinite(W) && W > 0 &&
-                          Number.isFinite(H) && H > 0 &&
-                          Number.isFinite(KG) && KG > 0;
+                          b.name &&
+                          b.name.trim().length > 0 &&
+                          Number.isFinite(L) &&
+                          L > 0 &&
+                          Number.isFinite(W) &&
+                          W > 0 &&
+                          Number.isFinite(H) &&
+                          H > 0 &&
+                          Number.isFinite(KG) &&
+                          KG > 0;
 
                         return (
                           <tr key={b.id} className="border-t border-ink-100">

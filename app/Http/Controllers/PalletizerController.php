@@ -33,6 +33,10 @@ class PalletizerController extends Controller
             'pallet_type_codes' => ['nullable', 'array'],
             'pallet_type_codes.*' => ['string', 'exists:pallet_types,code'],
 
+            'carrier_mode' => ['required', 'in:auto,manual'],
+            'carrier_ids' => ['nullable', 'array'],
+            'carrier_ids.*' => ['integer', 'exists:carriers,id'],
+
             'allow_separators' => ['required', 'boolean'],
         ]);
 
@@ -40,6 +44,12 @@ class PalletizerController extends Controller
         if ($data['pallet_mode'] === 'manual' && empty($data['pallet_type_codes'])) {
             return back()->withErrors([
                 'pallet_type_codes' => 'Selecciona al menos un tipo de pallet o usa modo Auto.',
+            ]);
+        }
+
+        if (($data['carrier_mode'] ?? 'auto') === 'manual' && empty($data['carrier_ids'])) {
+            return back()->withErrors([
+                'carrier_ids' => 'Selecciona al menos un transportista o usa modo Auto.',
             ]);
         }
 
@@ -72,8 +82,15 @@ class PalletizerController extends Controller
 
         $allowedCodes = ($data['pallet_mode'] === 'manual') ? $data['pallet_type_codes'] : null;
         $allowSeparators = (bool) $data['allow_separators'];
+        $carrierIds = ($data['carrier_mode'] === 'manual') ? $data['carrier_ids'] : null;
 
-        $plan = $svc->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedCodes, $allowSeparators);
+        $plan = $svc->calculateBestPlanAcrossCarriers(
+            $zoneId,
+            $items,
+            $allowedCodes,
+            $allowSeparators,
+            $carrierIds
+        );
 
         return Inertia::render('Palletizer/Index', [
             'result' => [

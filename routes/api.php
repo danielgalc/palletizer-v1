@@ -8,6 +8,7 @@ use App\Http\Controllers\ExportController;
 use App\Http\Controllers\Api\CountryController;
 use App\Http\Controllers\Api\ZoneController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\CarrierController;
 
 
 Route::get('/provinces', [ProvinceController::class, 'index']);
@@ -21,3 +22,5 @@ Route::post('/export/best-plan-pdf', [ExportController::class, 'bestPlanPdf']);
 
 Route::get('/countries', [CountryController::class, 'index']);
 Route::get('/zones', [ZoneController::class, 'index']);
+
+Route::get('/carriers', [CarrierController::class, 'index']);

@@ -10,43 +10,36 @@ class PalletTypeController extends Controller
 {
     public function index(Request $request)
     {
-        $countryCode = strtoupper((string) $request->query('country_code', ''));
-        $provinceId  = $request->query('province_id');
-        $zoneId      = $request->query('zone_id');
-        $carrierId   = $request->query('carrier_id');
+        $zoneId = $request->query('zone_id');
+        $provinceId = $request->query('province_id');
+        $carrierIds = $request->query('carrier_ids'); // puede venir como array o string
 
-        // Resolver zone_id si viene España + province_id
-        $resolvedZoneId = null;
-
-        if ($countryCode === 'ES' && $provinceId) {
-            $resolvedZoneId = DB::table('provinces')->where('id', (int)$provinceId)->value('zone_id');
-        } elseif ($zoneId) {
-            $resolvedZoneId = (int) $zoneId;
+        if (!$zoneId && $provinceId) {
+            $zoneId = DB::table('provinces')->where('id', (int)$provinceId)->value('zone_id');
         }
 
-        // Si no tenemos zona, devolvemos todos
-        if (!$resolvedZoneId) {
-            $types = DB::table('pallet_types')
-                ->orderBy('id')
-                ->get(['id', 'code', 'name']);
-
-            return response()->json($types);
-        }
-
-        // Si hay zona, devolvemos SOLO los pallet_types que tienen rates para esa zona (y carrier si aplica)
+        // Base query
         $q = DB::table('pallet_types')
-            ->join('rates', 'rates.pallet_type_id', '=', 'pallet_types.id')
-            ->where('rates.zone_id', $resolvedZoneId);
+            ->select('pallet_types.id', 'pallet_types.code', 'pallet_types.name')
+            ->orderBy('pallet_types.id');
 
-        if ($carrierId !== null && $carrierId !== '') {
-            $q->where('rates.carrier_id', (int)$carrierId);
+        // Si hay destino, filtramos a los pallet_types que tengan rates para ese destino
+        if ($zoneId) {
+            $q->join('rates', 'rates.pallet_type_id', '=', 'pallet_types.id')
+              ->where('rates.zone_id', (int)$zoneId);
+
+            // Filtrar por carriers si vienen
+            if ($carrierIds) {
+                $ids = is_array($carrierIds) ? $carrierIds : explode(',', (string)$carrierIds);
+                $ids = array_values(array_filter(array_map('intval', $ids)));
+                if (!empty($ids)) {
+                    $q->whereIn('rates.carrier_id', $ids);
+                }
+            }
+
+            $q->distinct();
         }
 
-        $types = $q
-            ->distinct()
-            ->orderBy('pallet_types.id')
-            ->get(['pallet_types.id', 'pallet_types.code', 'pallet_types.name']);
-
-        return response()->json($types);
+        return response()->json($q->get());
     }
 }
