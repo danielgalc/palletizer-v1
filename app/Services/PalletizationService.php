@@ -87,12 +87,11 @@ class PalletizationService
             }
 
             if (!$rate) {
-                continue; // evita el crash
+                continue; // 👈 evita el crash
             }
 
             $pricePerPallet = (float) $rate->price_eur;
             $totalPrice = $pricePerPallet * (int) $sim['pallet_count'];
-
 
             $candidates[] = [
                 'pallet_type_code' => $palletType->code,
@@ -668,7 +667,7 @@ class PalletizationService
     }
 
     /**
-     * 
+     *
      * Genera recomendaciones comparando alternativas por % del total.
      *
      * Criterios:
@@ -770,14 +769,6 @@ class PalletizationService
     {
         if ($palletCount <= 0) return 0.0;
 
-        $rate = DB::table('rates')
-            ->where('zone_id', $zoneId)
-            ->where('pallet_type_id', $palletType->id)
-            ->where('min_pallets', '<=', $palletCount)
-            ->where('max_pallets', '>=', $palletCount)
-            ->orderBy('min_pallets')
-            ->first();
-
         $rateQuery = DB::table('rates')
             ->where('zone_id', $zoneId)
             ->where('pallet_type_id', $palletType->id);
@@ -824,8 +815,14 @@ class PalletizationService
             ->distinct()
             ->get();
 
+        // Si el usuario ha seleccionado carriers en UI, calculamos SOLO con esos.
         if (is_array($carrierIds) && count($carrierIds) > 0) {
-            $carrierRows->whereIn('carriers.id', array_map('intval', $carrierIds));
+            $ids = array_values(array_unique(array_filter(array_map('intval', $carrierIds), fn ($v) => $v > 0)));
+            $carrierRows = $carrierRows->whereIn('id', $ids)->values();
+        }
+
+        if ($carrierRows->isEmpty()) {
+            return ['error' => 'No hay transportistas con tarifas para esa zona (o no coinciden con la selección).'];
         }
 
         $allCandidates = [];
