@@ -68,7 +68,7 @@ function pricePerPallet(plan) {
   }
 
   const total = Number(plan.total_price);
-  const count = Number(plan.pallet_count);
+  const count = Number(plan.pallet_count ?? plan.pallets_count);
 
   if (!Number.isFinite(total) || !Number.isFinite(count) || count <= 0) return null;
 
@@ -635,8 +635,6 @@ export default function Index({ result }) {
   const destinationDisabled = !countrySelected;
 
   // Query base para endpoints que dependen del destino (carriers / pallet-types).
-  // - ES: usamos province_id (el backend puede resolver zone_id internamente)
-  // - No-ES: usamos zone_id
   const destinationQuery = useMemo(() => {
     if (!data.country_code) return null;
 
@@ -648,6 +646,21 @@ export default function Index({ result }) {
     if (!data.zone_id) return null;
     return `zone_id=${encodeURIComponent(String(data.zone_id))}`;
   }, [data.country_code, data.province_id, data.zone_id]);
+
+  // Reset robusto cuando cambia el destino válido
+  const prevDestinationQueryRef = useRef(null);
+  useEffect(() => {
+    const prev = prevDestinationQueryRef.current;
+
+    if (prev && destinationQuery && prev !== destinationQuery) {
+      setData("carrier_mode", "auto");
+      setData("carrier_ids", []);
+      setData("pallet_type_codes", []);
+    }
+
+    prevDestinationQueryRef.current = destinationQuery;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destinationQuery]);
 
   // Fetch de transportistas (para el modo Manual)
   useEffect(() => {
@@ -695,11 +708,8 @@ export default function Index({ result }) {
 
   // Pallet types (tarifas) dependientes de destino + carriers seleccionados
   useEffect(() => {
-    // Los "pallet types" que mostramos dependen del destino (zona) y, si el usuario filtra carriers, también de esos carriers.
-    // El objetivo es que el selector (modo Manual) solo permita tarifas aplicables.
     let cancelled = false;
 
-    // Si no hay destino válido aún, limpiamos.
     if (!destinationQuery) {
       setPalletTypes([]);
       setLoadingPalletTypes(false);
@@ -707,7 +717,6 @@ export default function Index({ result }) {
       return;
     }
 
-    // Si el usuario ha elegido filtrar carriers pero todavía no ha seleccionado ninguno, no podemos cargar tipos aplicables.
     if (data.carrier_mode === "manual" && (!Array.isArray(data.carrier_ids) || data.carrier_ids.length === 0)) {
       setPalletTypes([]);
       setLoadingPalletTypes(false);
@@ -771,6 +780,8 @@ export default function Index({ result }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.pallet_mode, palletTypes.length]);
 
+  const bestCarrierId = best?.carrier_id ?? null;
+
   return (
     <AppLayout title="Palletizer">
       <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
@@ -792,7 +803,6 @@ export default function Index({ result }) {
                   const cc = e.target.value;
                   setData("country_code", cc);
 
-                  // Reset dependientes
                   if (cc === "ES") {
                     setData("zone_id", null);
                   } else {
@@ -802,12 +812,10 @@ export default function Index({ result }) {
                     setHighlightIndex(0);
                   }
 
-                  // Reset carriers + tarifas (por cambio de destino)
                   setData("carrier_mode", "auto");
                   setData("carrier_ids", []);
                   setData("pallet_type_codes", []);
 
-                  // Si selecciona placeholder vacío, resetea todo
                   if (!cc) {
                     setData("province_id", null);
                     setData("zone_id", null);
@@ -869,10 +877,8 @@ export default function Index({ result }) {
                       setIsOpen(true);
                       setHighlightIndex(0);
 
-                      // al teclear, invalida selección
                       setData("province_id", null);
 
-                      // reset carriers + tarifas (mientras se cambia destino)
                       setData("carrier_ids", []);
                       setData("pallet_type_codes", []);
                     }}
@@ -901,7 +907,6 @@ export default function Index({ result }) {
                               e.preventDefault();
                               selectProvince(p);
 
-                              // Reset carriers + tarifas (por cambio de destino real)
                               setData("carrier_ids", []);
                               setData("pallet_type_codes", []);
                             }}
@@ -941,7 +946,6 @@ export default function Index({ result }) {
                       setZoneHighlightIndex(0);
                       setData("zone_id", null);
 
-                      // reset carriers + tarifas (mientras se cambia destino)
                       setData("carrier_ids", []);
                       setData("pallet_type_codes", []);
                     }}
@@ -964,7 +968,6 @@ export default function Index({ result }) {
                               e.preventDefault();
                               selectZone(z);
 
-                              // Reset carriers + tarifas (por cambio de destino real)
                               setData("carrier_ids", []);
                               setData("pallet_type_codes", []);
                             }}
@@ -1003,7 +1006,6 @@ export default function Index({ result }) {
                     onChange={() => {
                       setData("carrier_mode", "auto");
                       setData("carrier_ids", []);
-                      // si vienes de manual, también limpiamos tipos para que se recalculen en función de "todos"
                       setData("pallet_type_codes", []);
                     }}
                     className="h-4 w-4 accent-brand-500"
@@ -1019,7 +1021,6 @@ export default function Index({ result }) {
                     checked={data.carrier_mode === "manual"}
                     onChange={() => {
                       setData("carrier_mode", "manual");
-                      // no seleccionamos ninguno por defecto; el usuario elige
                       setData("carrier_ids", []);
                       setData("pallet_type_codes", []);
                     }}
@@ -1077,8 +1078,6 @@ export default function Index({ result }) {
                                   : data.carrier_ids.filter((id) => id !== c.id);
 
                                 setData("carrier_ids", next);
-
-                                // al cambiar carriers, invalida posibles pallet types seleccionados (se recalcularán al refetch)
                                 setData("pallet_type_codes", []);
                               }}
                               className="h-4 w-4 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
@@ -1223,7 +1222,9 @@ export default function Index({ result }) {
             <details className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
               <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-ink-900">
                 <span>Datos de cajas (actual)</span>
-                <span className="text-xs font-semibold text-ink-500">{boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}</span>
+                <span className="text-xs font-semibold text-ink-500">
+                  {boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}
+                </span>
               </summary>
 
               <div className="mt-3">
@@ -1360,7 +1361,7 @@ export default function Index({ result }) {
               )}
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <Stat label="Pallets" value={fmtNum(best.pallet_count)} />
+                <Stat label="Pallets" value={fmtNum(best.pallet_count ?? best.pallets_count)} />
                 <Stat label="€/pallet" value={fmtEUR(pricePerPallet(best))} />
                 <Stat label="Total" value={fmtEUR(best.total_price)} />
               </div>
@@ -1425,7 +1426,157 @@ export default function Index({ result }) {
                 </div>
               )}
 
-              {/* (resto del panel derecho igual que tenías) */}
+              {/* MÉTRICAS DE CÁLCULO */}
+              {metrics && (
+                <details className="rounded-2xl border border-ink-100 bg-white p-4">
+                  <summary className="cursor-pointer text-sm font-extrabold text-ink-900">Métricas de cálculo</summary>
+
+                  <div className="mt-4 space-y-4">
+                    {palletMeta && (
+                      <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                        <div className="text-sm font-extrabold text-ink-900">Pallet (límites)</div>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                          <Stat label="L (cm)" value={fmtNum(palletMeta.L_cm ?? palletMeta.L)} />
+                          <Stat label="W (cm)" value={fmtNum(palletMeta.W_cm ?? palletMeta.W)} />
+                          <Stat label="H máx (cm)" value={fmtNum(palletMeta.H_cm ?? palletMeta.H)} />
+                          <Stat label="Kg máx" value={fmtNum(palletMeta.max_kg ?? palletMeta.kg)} />
+                        </div>
+                      </div>
+                    )}
+
+                    {!!metrics?.mixed && (
+                      <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                        <div className="text-sm font-extrabold text-ink-900">Plan mixto</div>
+
+                        {metrics?.types && (
+                          <div className="mt-3 overflow-x-auto">
+                            <table className="min-w-[420px] w-full border-separate border-spacing-0">
+                              <thead>
+                                <tr className="text-left text-xs text-ink-500">
+                                  <th className="py-2 pr-3">Tipo</th>
+                                  <th className="py-2 pr-3">Pallets</th>
+                                  <th className="py-2 pr-3">Coste</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-sm text-ink-800">
+                                {Object.entries(metrics.types).map(([code, count]) => (
+                                  <tr key={code} className="border-t border-ink-100">
+                                    <td className="py-2 pr-3 font-semibold">{code}</td>
+                                    <td className="py-2 pr-3">{count}</td>
+                                    <td className="py-2 pr-3">{fmtEUR(metrics?.cost_breakdown?.[code])}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        <div className="mt-3 text-xs text-ink-600">
+                          Nota: en planes mixtos el “€/pallet” mostrado es el promedio (total / nº pallets).
+                        </div>
+                      </div>
+                    )}
+
+                    {perType && (
+                      <div className="rounded-xl border border-ink-100 bg-white p-4">
+                        <div className="text-sm font-extrabold text-ink-900">Cajas por tipo</div>
+
+                        <div className="mt-3 overflow-x-auto">
+                          <table className="min-w-[520px] w-full border-separate border-spacing-0">
+                            <thead>
+                              <tr className="text-left text-xs text-ink-500">
+                                <th className="py-2 pr-3">Tipo</th>
+                                <th className="py-2 pr-3">Cajas/capa</th>
+                                <th className="py-2 pr-3">Altura (cm)</th>
+                                <th className="py-2 pr-3">Peso/caja (kg)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="text-sm text-ink-800">
+                              {["tower", "laptop", "mini_pc"].map((code) => {
+                                const t = perType?.[code];
+                                if (!t) return null;
+
+                                const label =
+                                  code === "tower" ? "Torres" : code === "laptop" ? "Portátiles" : "Mini PCs";
+
+                                return (
+                                  <tr key={code} className="border-t border-ink-100">
+                                    <td className="py-2 pr-3 font-semibold">{label}</td>
+                                    <td className="py-2 pr-3">{fmtNum(t.per_layer)}</td>
+                                    <td className="py-2 pr-3">{fmtNum(t.height_cm)}</td>
+                                    <td className="py-2 pr-3">{fmtNum(t.weight_kg)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {metrics?.note ? (
+                          <div className="mt-3 text-xs text-ink-600">
+                            <b>Nota:</b> {metrics.note}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
+
+              {/* ✅ ALTERNATIVAS cross-carrier */}
+              {alternatives.length > 0 && (
+                <details className="rounded-2xl border border-ink-100 bg-white p-4">
+                  <summary className="cursor-pointer text-sm font-extrabold text-ink-900">Alternativas</summary>
+
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-[760px] w-full border-separate border-spacing-0">
+                      <thead>
+                        <tr className="text-left text-xs text-ink-500">
+                          <th className="py-2 pr-3">Transportista</th>
+                          <th className="py-2 pr-3">Tipo</th>
+                          <th className="py-2 pr-3">Pallets</th>
+                          <th className="py-2 pr-3">€/pallet</th>
+                          <th className="py-2 pr-3">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm text-ink-800">
+                        {alternatives.map((a, idx) => {
+                          const altCarrierId = a?.carrier_id ?? null;
+                          const isOtherCarrier =
+                            bestCarrierId !== null && altCarrierId !== null && Number(altCarrierId) !== Number(bestCarrierId);
+
+                          return (
+                            <tr key={idx} className="border-t border-ink-100">
+                              <td className="py-2 pr-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold">{a?.carrier_name ?? "—"}</span>
+                                  {isOtherCarrier ? (
+                                    <span className="inline-flex items-center rounded-full bg-yellow-50 px-2 py-0.5 text-[11px] font-extrabold text-ink-700 ring-1 ring-ink-100">
+                                      Otro transportista
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {a?.carrier_code ? (
+                                  <div className="mt-0.5 text-[11px] font-semibold text-ink-500">{a.carrier_code}</div>
+                                ) : null}
+                              </td>
+
+                              <td className="py-2 pr-3 font-semibold">{a.pallet_type_name}</td>
+                              <td className="py-2 pr-3">{fmtNum(a.pallet_count ?? a.pallets_count)}</td>
+                              <td className="py-2 pr-3">{fmtEUR(pricePerPallet(a))}</td>
+                              <td className="py-2 pr-3">{fmtEUR(a.total_price)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-3 text-xs text-ink-600">
+                    Estas alternativas se eligen por cercanía al mejor global (aunque sean de otros transportistas).
+                  </div>
+                </details>
+              )}
             </div>
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
