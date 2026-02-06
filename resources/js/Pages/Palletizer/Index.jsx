@@ -62,11 +62,13 @@ function fmtNum(v) {
 function pricePerPallet(plan) {
   if (!plan) return null;
 
+  // Si viene un €/pallet directo, úsalo
   if (plan.price_per_pallet !== null && plan.price_per_pallet !== undefined) {
     const v = Number(plan.price_per_pallet);
     return Number.isFinite(v) ? v : null;
   }
 
+  // Si no, usa media: total / pallets
   const total = Number(plan.total_price);
   const count = Number(plan.pallet_count ?? plan.pallets_count);
 
@@ -74,6 +76,132 @@ function pricePerPallet(plan) {
 
   return total / count;
 }
+
+function getPalletCounts(p) {
+  // Formato nuevo: p.boxes = {tower,laptop,mini_pc}
+  if (p && typeof p === "object" && p.boxes && typeof p.boxes === "object") {
+    return {
+      tower: Number(p.boxes.tower ?? 0),
+      laptop: Number(p.boxes.laptop ?? 0),
+      mini_pc: Number(p.boxes.mini_pc ?? 0),
+    };
+  }
+
+  // Formato viejo: p.tower, p.laptop, p.mini_pc
+  return {
+    tower: Number(p?.tower ?? 0),
+    laptop: Number(p?.laptop ?? 0),
+    mini_pc: Number(p?.mini_pc ?? 0),
+  };
+}
+
+function getLayerBaseType(layer) {
+  // Viejo: base_type
+  if (layer?.base_type) return String(layer.base_type);
+
+  // Nuevo: type
+  if (layer?.type) return String(layer.type);
+
+  return "—";
+}
+
+function getLayerCounts(layer) {
+  // Viejo: counts ya viene montado
+  if (layer?.counts && typeof layer.counts === "object") {
+    return {
+      tower: Number(layer.counts.tower ?? 0),
+      laptop: Number(layer.counts.laptop ?? 0),
+      mini_pc: Number(layer.counts.mini_pc ?? 0),
+    };
+  }
+
+  // Nuevo: {type,count} + mixed:[{type,count}]
+  const counts = { tower: 0, laptop: 0, mini_pc: 0 };
+
+  const t = layer?.type;
+  const c = Number(layer?.count ?? 0);
+  if (t && t in counts) counts[t] += c;
+
+  if (Array.isArray(layer?.mixed)) {
+    for (const m of layer.mixed) {
+      const mt = m?.type;
+      const mc = Number(m?.count ?? 0);
+      if (mt && mt in counts) counts[mt] += mc;
+    }
+  }
+
+  return counts;
+}
+
+function computeLayerHeightKg(layer, perType) {
+  // Si backend ya lo trae, úsalo
+  const h = layer?.height_cm;
+  const kg = layer?.weight_kg;
+  if (h !== undefined || kg !== undefined) {
+    return {
+      height_cm: h !== undefined ? Number(h) : null,
+      weight_kg: kg !== undefined ? Number(kg) : null,
+    };
+  }
+
+  // Si no, intenta derivarlo desde perType
+  if (!perType) return { height_cm: null, weight_kg: null };
+
+  const counts = getLayerCounts(layer);
+  const base = getLayerBaseType(layer);
+
+  const baseH = perType?.[base]?.height_cm;
+  const height_cm = baseH !== undefined ? Number(baseH) : null;
+
+  let weight_kg = 0;
+  let ok = false;
+  for (const k of ["tower", "laptop", "mini_pc"]) {
+    const w = perType?.[k]?.weight_kg;
+    if (w !== undefined) {
+      ok = true;
+      weight_kg += Number(w) * Number(counts[k] ?? 0);
+    }
+  }
+  if (!ok) weight_kg = null;
+
+  return { height_cm, weight_kg };
+}
+
+function computeRemainingCapacity(p, palletMeta) {
+  // 1) Si backend ya lo trae
+  const rc = p?.remaining_capacity;
+  if (rc && typeof rc === "object") {
+    const h = rc.height_cm_left ?? rc.height_left_cm ?? rc.h_left_cm;
+    const w = rc.weight_kg_left ?? rc.weight_left_kg ?? rc.w_left_kg;
+    if (h !== undefined || w !== undefined) {
+      return {
+        height_cm_left: h !== undefined ? Number(h) : null,
+        weight_kg_left: w !== undefined ? Number(w) : null,
+      };
+    }
+  }
+
+  // 2) Si no lo trae, intenta derivarlo con palletMeta + p.height_cm/p.weight_kg
+  const Hmax = palletMeta?.H_cm ?? palletMeta?.H ?? palletMeta?.max_height_cm;
+  const KgMax = palletMeta?.max_kg ?? palletMeta?.kg ?? palletMeta?.max_weight_kg;
+
+  const usedH = p?.height_cm;
+  const usedKg = p?.weight_kg;
+
+  if (Hmax !== undefined && usedH !== undefined) {
+    const height_cm_left = Number(Hmax) - Number(usedH);
+    const weight_kg_left =
+      KgMax !== undefined && usedKg !== undefined ? Number(KgMax) - Number(usedKg) : null;
+
+    return {
+      height_cm_left: Number.isFinite(height_cm_left) ? Math.max(0, height_cm_left) : null,
+      weight_kg_left: weight_kg_left !== null && Number.isFinite(weight_kg_left) ? Math.max(0, weight_kg_left) : null,
+    };
+  }
+
+  return { height_cm_left: null, weight_kg_left: null };
+}
+
 
 export default function Index({ result }) {
   const { data, setData, post, processing, errors } = useForm({
@@ -207,7 +335,7 @@ export default function Index({ result }) {
             const firstKey = Object.keys(data.errors)[0];
             if (firstKey) errText = data.errors[firstKey][0];
           }
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(errText);
       }
 
@@ -388,7 +516,7 @@ export default function Index({ result }) {
         post(route("palletizer.calculate"), { preserveScroll: true });
         return;
       }
-    } catch (_) {}
+    } catch (_) { }
 
     post("/palletizer/calculate", { preserveScroll: true });
   };
@@ -429,7 +557,7 @@ export default function Index({ result }) {
         try {
           const j = await res.json();
           if (j?.message) msg = j.message;
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(msg);
       }
 
@@ -490,7 +618,7 @@ export default function Index({ result }) {
             const t = await res.text();
             if (t) msg = t;
           }
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(msg);
       }
 
@@ -545,13 +673,13 @@ export default function Index({ result }) {
     ? false
     : isES
       ? !loadingProvinces &&
-        !provincesError &&
-        data.province_id !== null &&
-        provinces.some((p) => p.id === data.province_id)
+      !provincesError &&
+      data.province_id !== null &&
+      provinces.some((p) => p.id === data.province_id)
       : !loadingZones &&
-        !zonesError &&
-        data.zone_id !== null &&
-        zones.some((z) => z.id === data.zone_id);
+      !zonesError &&
+      data.zone_id !== null &&
+      zones.some((z) => z.id === data.zone_id);
 
   const canSubmit =
     !processing &&
@@ -1037,7 +1165,9 @@ export default function Index({ result }) {
                   ) : loadingCarriers ? (
                     <div className="text-sm text-ink-500">Cargando transportistas…</div>
                   ) : carriersError ? (
-                    <div className="text-sm font-semibold text-red-600">{carriersError} (revisa GET /api/carriers)</div>
+                    <div className="text-sm font-semibold text-red-600">
+                      {carriersError} (revisa GET /api/carriers)
+                    </div>
                   ) : carriers.length === 0 ? (
                     <div className="text-sm text-ink-500">No hay transportistas con tarifas para este destino.</div>
                   ) : (
@@ -1222,9 +1352,7 @@ export default function Index({ result }) {
             <details className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
               <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-ink-900">
                 <span>Datos de cajas (actual)</span>
-                <span className="text-xs font-semibold text-ink-500">
-                  {boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}
-                </span>
+                <span className="text-xs font-semibold text-ink-500">{boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}</span>
               </summary>
 
               <div className="mt-3">
@@ -1407,12 +1535,12 @@ export default function Index({ result }) {
                         <div className="text-sm font-semibold text-ink-800">{r.message}</div>
 
                         <div className="mt-1 text-xs text-ink-600">
-                          Diferencia: <b>{Number(r.delta_pct).toFixed(2)}%</b> · Best: <b>{fmtEUR(r.best_total)}</b> ·
-                          Alt: <b>{fmtEUR(r.alt_total)}</b>
-                          {r?.alt?.pallet_count !== undefined ? (
+                          Diferencia: <b>{Number(r.delta_pct).toFixed(2)}%</b> · Best: <b>{fmtEUR(r.best_total)}</b> · Alt:{" "}
+                          <b>{fmtEUR(r.alt_total)}</b>
+                          {r?.alt?.pallet_count !== undefined || r?.alt?.pallets_count !== undefined ? (
                             <>
                               {" "}
-                              · Pallets alt: <b>{fmtNum(r.alt.pallet_count)}</b>
+                              · Pallets alt: <b>{fmtNum(r.alt.pallet_count ?? r.alt.pallets_count)}</b>
                             </>
                           ) : null}
                         </div>
@@ -1425,6 +1553,130 @@ export default function Index({ result }) {
                   </div>
                 </div>
               )}
+
+              {/* ✅ DISTRIBUCIÓN POR PALLET (con altura/peso libre + “Ver capas” completo) */}
+              {Array.isArray(best?.pallets) && best.pallets.length > 0 && (
+                <details className="rounded-xl border border-ink-100 p-4">
+                  <summary className="cursor-pointer text-sm font-extrabold text-ink-900">
+                    Distribución por pallet
+                  </summary>
+
+                  <div className="mt-4 space-y-3">
+                    {best.pallets.map((p, idx) => {
+                      const c = getPalletCounts(p);
+                      const sep = Number(p?.separators_used ?? 0);
+
+                      const remaining = computeRemainingCapacity(p, palletMeta);
+                      const hLeft = remaining?.height_cm_left;
+                      const wLeft = remaining?.weight_kg_left;
+
+                      return (
+                        <div key={idx} className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                            <div className="font-bold text-ink-900 text-decoration-line: underline">Pallet #{idx + 1}</div>
+
+                            <div>
+                              Torres: <b>{fmtNum(c.tower)}</b>
+                            </div>
+                            <div>
+                              Portátiles: <b>{fmtNum(c.laptop)}</b>
+                            </div>
+                            <div>
+                              Minis: <b>{fmtNum(c.mini_pc)}</b>
+                            </div>
+
+                            {"separators_used" in (p || {}) && (
+                              <div className="text-ink-600">
+                                Separadores: <b>{fmtNum(sep)}</b>
+                              </div>
+                            )}
+
+                            {(hLeft !== null && hLeft !== undefined) || (wLeft !== null && wLeft !== undefined) ? (
+                              <div className="text-ink-600">
+                                {hLeft !== null && hLeft !== undefined ? (
+                                  <>
+                                    Altura libre: <b>{fmtNum(hLeft)}</b> cm
+                                  </>
+                                ) : null}
+                                {wLeft !== null && wLeft !== undefined ? (
+                                  <>
+                                    {hLeft !== null && hLeft !== undefined ? " · " : ""}
+                                    Peso libre: <b>{fmtNum(wLeft)}</b> kg
+                                  </>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {Array.isArray(p?.layers) && p.layers.length > 0 && (
+                            <details className="mt-3">
+                              <summary className="cursor-pointer text-sm font-semibold text-ink-800">Ver capas</summary>
+
+                              <div className="mt-3 space-y-2">
+                                {p.layers.map((layer, i) => {
+                                  const base = getLayerBaseType(layer);
+                                  const counts = getLayerCounts(layer);
+
+                                  const cap = layer?.per_layer ?? layer?.capacity ?? layer?.perLayer ?? null;
+
+                                  const needsSep = !!(layer?.needs_separator ?? layer?.separator);
+                                  const slotsEmptyRaw = layer?.slots_empty ?? layer?.empty_slots ?? 0;
+                                  const slotsEmpty = Number(slotsEmptyRaw ?? 0);
+
+                                  const derived = computeLayerHeightKg(layer, perType);
+                                  const h = derived?.height_cm;
+                                  const kg = derived?.weight_kg;
+
+                                  // En formato nuevo, layer.count es “cajas del base”, en viejo se calcula con counts
+                                  const baseCount =
+                                    layer?.count !== undefined && layer?.type
+                                      ? Number(layer.count)
+                                      : Number(counts?.[base] ?? 0);
+
+                                  return (
+                                    <div key={i} className="rounded-lg bg-white p-3 ring-1 ring-ink-100">
+                                      <div className="text-xs text-ink-500">
+                                        Capa {i + 1}
+                                        {cap !== null ? (
+                                          <>
+                                            {" "}
+                                            · Cajas <b>{fmtNum(baseCount)}</b> / {fmtNum(cap)} por capa
+                                          </>
+                                        ) : null}
+                                        {h !== null && h !== undefined ? (
+                                          <>
+                                            {" "}
+                                            · altura <b>{fmtNum(h)}</b> cm
+                                          </>
+                                        ) : null}
+                                        {kg !== null && kg !== undefined ? (
+                                          <>
+                                            {" "}
+                                            · peso <b>{fmtNum(kg)}</b> kg
+                                          </>
+                                        ) : null}
+                                        {needsSep ? " · separador" : ""}
+                                        {slotsEmpty > 0 ? ` · huecos ${slotsEmpty}` : ""}
+                                      </div>
+
+                                      <div className="mt-1 text-sm text-ink-800">
+                                        Torres: <b>{fmtNum(counts.tower)}</b> · Portátiles: <b>{fmtNum(counts.laptop)}</b> · Minis:{" "}
+                                        <b>{fmtNum(counts.mini_pc)}</b>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+              )}
+
+
 
               {/* MÉTRICAS DE CÁLCULO */}
               {metrics && (
@@ -1496,8 +1748,7 @@ export default function Index({ result }) {
                                 const t = perType?.[code];
                                 if (!t) return null;
 
-                                const label =
-                                  code === "tower" ? "Torres" : code === "laptop" ? "Portátiles" : "Mini PCs";
+                                const label = code === "tower" ? "Torres" : code === "laptop" ? "Portátiles" : "Mini PCs";
 
                                 return (
                                   <tr key={code} className="border-t border-ink-100">
@@ -1543,7 +1794,9 @@ export default function Index({ result }) {
                         {alternatives.map((a, idx) => {
                           const altCarrierId = a?.carrier_id ?? null;
                           const isOtherCarrier =
-                            bestCarrierId !== null && altCarrierId !== null && Number(altCarrierId) !== Number(bestCarrierId);
+                            bestCarrierId !== null &&
+                            altCarrierId !== null &&
+                            Number(altCarrierId) !== Number(bestCarrierId);
 
                           return (
                             <tr key={idx} className="border-t border-ink-100">
