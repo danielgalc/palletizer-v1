@@ -77,7 +77,6 @@ function pricePerPallet(plan) {
   return total / count;
 }
 
-
 function splitTypeLabel(typeName) {
   const s = String(typeName ?? "").trim();
   if (!s) return { short: "—", detail: "" };
@@ -106,14 +105,13 @@ function compactCarrierBadge(isOtherCarrier) {
     : "inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100";
 }
 
-
 /**
  * Formatea el tipo de pallet con un formato limpio y no redundante.
- * 
+ *
  * PLANES MONO-TIPO:
  * - Con nombre comercial: "Light Pallet — 120×100 cm (220cm altura, 750kg)"
  * - Sin nombre comercial: "120×100 cm (220cm altura, 750kg)"
- * 
+ *
  * PLANES MIXTOS (compacto):
  * - "7× Extra Light + 1× Light Pallet"
  * - "5× 120×100 (220cm, 750kg) + 1× 120×100 (220cm, 1200kg)" (si no hay nombres)
@@ -122,7 +120,7 @@ function formatPalletType(plan) {
   if (!plan) return "—";
 
   // CASO 1: Plan mixto (tiene objeto mix)
-  if (plan.mix && typeof plan.mix === 'object') {
+  if (plan.mix && typeof plan.mix === "object") {
     const parts = [];
 
     // Procesar tipo A
@@ -143,7 +141,7 @@ function formatPalletType(plan) {
       parts.push(`${countB}× ${nameB}`);
     }
 
-    return parts.join(' + ');
+    return parts.join(" + ");
   }
 
   // CASO 2: Plan mono-tipo
@@ -154,7 +152,7 @@ function formatPalletType(plan) {
   // Para convertirlo a: "120×100 cm (220cm altura, 750kg)"
   const enhancedTech = technical.replace(
     /(\d+×\d+)\s*\((\d+)cm,\s*(\d+)kg\)/,
-    '$1 cm ($2cm altura, $3kg)'
+    "$1 cm ($2cm altura, $3kg)"
   );
 
   if (commercial) {
@@ -163,8 +161,6 @@ function formatPalletType(plan) {
 
   return enhancedTech;
 }
-
-
 
 function getPalletCounts(p) {
   // Formato nuevo: p.boxes = {tower,laptop,mini_pc}
@@ -284,13 +280,13 @@ function computeRemainingCapacity(p, palletMeta) {
 
     return {
       height_cm_left: Number.isFinite(height_cm_left) ? Math.max(0, height_cm_left) : null,
-      weight_kg_left: weight_kg_left !== null && Number.isFinite(weight_kg_left) ? Math.max(0, weight_kg_left) : null,
+      weight_kg_left:
+        weight_kg_left !== null && Number.isFinite(weight_kg_left) ? Math.max(0, weight_kg_left) : null,
     };
   }
 
   return { height_cm_left: null, weight_kg_left: null };
 }
-
 
 export default function Index({ result }) {
   const { data, setData, post, processing, errors } = useForm({
@@ -298,6 +294,10 @@ export default function Index({ result }) {
     zone_id: null,
     province_id: null,
 
+    // NUEVO: líneas dinámicas por modelo/equipo
+    lines: [{ device_model_id: null, qty: 0 }],
+
+    // LEGACY (se mantiene para compatibilidad mientras el backend/export siga esperando 3 campos)
     mini_pc: 0,
     tower: 0,
     laptop: 0,
@@ -312,6 +312,41 @@ export default function Index({ result }) {
   const [provinces, setProvinces] = useState([]);
   const [loadingProvinces, setLoadingProvinces] = useState(true);
   const [provincesError, setProvincesError] = useState(null);
+
+  // Device models
+  const [deviceModels, setDeviceModels] = useState([]);
+  const [loadingDeviceModels, setLoadingDeviceModels] = useState(false);
+  const [deviceModelsError, setDeviceModelsError] = useState(null);
+
+  const deviceModelsById = useMemo(() => {
+    const m = new Map();
+    for (const dm of deviceModels) {
+      if (dm && dm.id != null) m.set(Number(dm.id), dm);
+    }
+    return m;
+  }, [deviceModels]);
+
+  const getLegacyCountsFromLines = useMemo(() => {
+    return () => {
+      const totals = { mini_pc: 0, tower: 0, laptop: 0 };
+
+      const lines = Array.isArray(data.lines) ? data.lines : [];
+      for (const line of lines) {
+        const id = line?.device_model_id;
+        const qty = Number(line?.qty ?? 0);
+        if (!id || !Number.isFinite(qty) || qty <= 0) continue;
+
+        const dm = deviceModelsById.get(Number(id));
+        const code = dm?.box_type?.code;
+        if (code && code in totals) {
+          totals[code] += qty;
+        }
+      }
+
+      return totals;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.lines, deviceModelsById]);
 
   // Autocomplete zonas
   const [zoneQuery, setZoneQuery] = useState("");
@@ -389,49 +424,44 @@ export default function Index({ result }) {
   };
 
   const onBoxChange = (id, field, value) => {
-    setBoxTypes((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
-    setBoxMsgById((prev) => ({ ...prev, [id]: null }));
+    setBoxTypes((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, [field]: value } : b))
+    );
+    setBoxTypesDirtyNotice(true);
   };
 
-  const saveBoxType = async (row) => {
-    const id = row.id;
-    setSavingBoxById((p) => ({ ...p, [id]: true }));
-    setBoxMsgById((p) => ({ ...p, [id]: null }));
-    setBoxTypesDirtyNotice(true);
+  const saveBoxType = async (id) => {
+    const box = boxTypes.find((b) => b.id === id);
+    if (!box) return;
 
-    const payload = {
-      name: row.name,
-      length_cm: Number(row.length_cm),
-      width_cm: Number(row.width_cm),
-      height_cm: Number(row.height_cm),
-      weight_kg: Number(row.weight_kg),
-    };
+    setSavingBoxById((p) => ({ ...p, [id]: true }));
+    setBoxMsgById((p) => ({ ...p, [id]: "" }));
 
     try {
       const res = await fetch(`/api/box-types/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          length_cm: Number(box.length_cm),
+          width_cm: Number(box.width_cm),
+          height_cm: Number(box.height_cm),
+          weight_kg: Number(box.weight_kg),
+        }),
       });
 
       if (!res.ok) {
-        let errText = "No se pudo guardar";
+        let msg = "No se pudo guardar";
         try {
-          const data = await res.json();
-          if (data?.message) errText = data.message;
-          if (data?.errors) {
-            const firstKey = Object.keys(data.errors)[0];
-            if (firstKey) errText = data.errors[firstKey][0];
-          }
+          const j = await res.json();
+          msg = j?.message || msg;
         } catch (_) { }
-        throw new Error(errText);
+        throw new Error(msg);
       }
 
-      const updated = await res.json();
-      setBoxTypes((prev) => prev.map((b) => (b.id === id ? updated : b)));
-      setBoxMsgById((p) => ({ ...p, [id]: { type: "ok", text: "Guardado" } }));
+      setBoxMsgById((p) => ({ ...p, [id]: "Guardado" }));
+      setTimeout(() => setBoxMsgById((p) => ({ ...p, [id]: "" })), 1400);
     } catch (e) {
-      setBoxMsgById((p) => ({ ...p, [id]: { type: "err", text: e.message || "Error guardando" } }));
+      setBoxMsgById((p) => ({ ...p, [id]: e.message || "Error" }));
     } finally {
       setSavingBoxById((p) => ({ ...p, [id]: false }));
     }
@@ -448,7 +478,7 @@ export default function Index({ result }) {
       })
       .then((list) => {
         if (cancelled) return;
-        setProvinces(list);
+        setProvinces(Array.isArray(list) ? list : []);
         setLoadingProvinces(false);
       })
       .catch((e) => {
@@ -460,19 +490,7 @@ export default function Index({ result }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const selectedProvinceObj = useMemo(() => {
-    return provinces.find((p) => p.id === data.province_id) || null;
-  }, [provinces, data.province_id]);
-
-  useEffect(() => {
-    if (selectedProvinceObj && query !== selectedProvinceObj.name) {
-      setQuery(selectedProvinceObj.name);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.province_id]);
 
   const filtered = useMemo(() => {
     const q = normalize(query);
@@ -490,25 +508,38 @@ export default function Index({ result }) {
     return [...starts, ...contains].slice(0, 12);
   }, [provinces, query]);
 
+  const selectedProvinceObj = useMemo(() => {
+    if (data.province_id === null) return null;
+    return provinces.find((p) => p.id === data.province_id) || null;
+  }, [provinces, data.province_id]);
+
+  useEffect(() => {
+    if (selectedProvinceObj && query !== selectedProvinceObj.name) {
+      setQuery(selectedProvinceObj.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.province_id]);
+
+  // Cerrar autocomplete al click fuera
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+        setHighlightIndex(0);
+      }
+    };
+
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
   const selectProvince = (p) => {
     setData("province_id", p.id);
     setQuery(p.name);
     setIsOpen(false);
     setHighlightIndex(0);
   };
-
-  useEffect(() => {
-    const onDocClick = (e) => {
-      const inProv = containerRef.current && containerRef.current.contains(e.target);
-      const inZone = zoneRef.current && zoneRef.current.contains(e.target);
-
-      if (!inProv) setIsOpen(false);
-      if (!inZone) setZoneOpen(false);
-    };
-
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
 
   const onKeyDown = (e) => {
     if (!isOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -535,8 +566,22 @@ export default function Index({ result }) {
     }
   };
 
-  // Zonas
+  // Autocomplete zonas: click fuera
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!zoneRef.current) return;
+      if (!zoneRef.current.contains(e.target)) {
+        setZoneOpen(false);
+        setZoneHighlightIndex(0);
+      }
+    };
+
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
   const selectedZoneObj = useMemo(() => {
+    if (data.zone_id === null) return null;
     return zones.find((z) => z.id === data.zone_id) || null;
   }, [zones, data.zone_id]);
 
@@ -762,13 +807,36 @@ export default function Index({ result }) {
       data.zone_id !== null &&
       zones.some((z) => z.id === data.zone_id);
 
+  const linesOk = useMemo(() => {
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    let any = false;
+
+    for (const l of lines) {
+      const qty = Number(l?.qty ?? 0);
+      const id = l?.device_model_id;
+
+      // No permitir negativos
+      if (Number.isFinite(qty) && qty < 0) return false;
+
+      // Si hay qty, debe haber modelo
+      if (qty > 0 && !id) return false;
+
+      // Si hay modelo, qty debe ser >= 0 (y para contar, > 0)
+      if (id && !Number.isFinite(qty)) return false;
+      if (id && qty > 0) any = true;
+    }
+
+    return any;
+  }, [data.lines]);
+
   const canSubmit =
     !processing &&
     !loadingCountries &&
     !countriesError &&
     countrySelected &&
     destinationOk &&
-    carrierOk;
+    carrierOk &&
+    linesOk;
 
   const best = result?.plan?.best || null;
   const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
@@ -806,6 +874,62 @@ export default function Index({ result }) {
       cancelled = true;
     };
   }, []);
+
+  // Fetch de modelos/equipos
+  useEffect(() => {
+    let cancelled = false;
+
+    setLoadingDeviceModels(true);
+    setDeviceModelsError(null);
+
+    fetch("/api/device-models?only_active=1")
+      .then((r) => {
+        if (!r.ok) throw new Error("No se pudieron cargar los modelos");
+        return r.json();
+      })
+      .then((list) => {
+        if (cancelled) return;
+        setDeviceModels(Array.isArray(list) ? list : []);
+        setLoadingDeviceModels(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadingDeviceModels(false);
+        setDeviceModelsError(e.message || "Error cargando modelos");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Mantener legacy mini_pc/tower/laptop sincronizado con las líneas (para export / compat)
+  useEffect(() => {
+    const totals = getLegacyCountsFromLines();
+
+    if (Number(data.mini_pc) !== totals.mini_pc) setData("mini_pc", totals.mini_pc);
+    if (Number(data.tower) !== totals.tower) setData("tower", totals.tower);
+    if (Number(data.laptop) !== totals.laptop) setData("laptop", totals.laptop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.lines, deviceModelsById]);
+
+  const addLine = () => {
+    const next = Array.isArray(data.lines) ? [...data.lines] : [];
+    next.push({ device_model_id: null, qty: 0 });
+    setData("lines", next);
+  };
+
+  const removeLine = (idx) => {
+    const next = Array.isArray(data.lines) ? data.lines.filter((_, i) => i !== idx) : [];
+    setData("lines", next.length > 0 ? next : [{ device_model_id: null, qty: 0 }]);
+  };
+
+  const updateLine = (idx, patch) => {
+    const next = Array.isArray(data.lines) ? [...data.lines] : [];
+    const curr = next[idx] || { device_model_id: null, qty: 0 };
+    next[idx] = { ...curr, ...patch };
+    setData("lines", next);
+  };
 
   // Fetch de zonas si el país no es ES
   useEffect(() => {
@@ -850,31 +974,15 @@ export default function Index({ result }) {
 
     if ((data.country_code || "ES") === "ES") {
       if (!data.province_id) return null;
-      return `province_id=${encodeURIComponent(String(data.province_id))}`;
+      return `country_code=ES&province_id=${encodeURIComponent(data.province_id)}`;
     }
 
     if (!data.zone_id) return null;
-    return `zone_id=${encodeURIComponent(String(data.zone_id))}`;
+    return `country_code=${encodeURIComponent(data.country_code)}&zone_id=${encodeURIComponent(data.zone_id)}`;
   }, [data.country_code, data.province_id, data.zone_id]);
 
-  // Reset robusto cuando cambia el destino válido
-  const prevDestinationQueryRef = useRef(null);
+  // Fetch de carriers por destino (solo si manual o para validar lista)
   useEffect(() => {
-    const prev = prevDestinationQueryRef.current;
-
-    if (prev && destinationQuery && prev !== destinationQuery) {
-      setData("carrier_mode", "auto");
-      setData("carrier_ids", []);
-    }
-
-    prevDestinationQueryRef.current = destinationQuery;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destinationQuery]);
-
-  // Fetch de transportistas (para el modo Manual)
-  useEffect(() => {
-    let cancelled = false;
-
     if (!destinationQuery) {
       setCarriers([]);
       setLoadingCarriers(false);
@@ -882,6 +990,8 @@ export default function Index({ result }) {
       if (Array.isArray(data.carrier_ids) && data.carrier_ids.length > 0) setData("carrier_ids", []);
       return;
     }
+
+    let cancelled = false;
 
     setLoadingCarriers(true);
     setCarriersError(null);
@@ -914,7 +1024,6 @@ export default function Index({ result }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destinationQuery]);
-
 
   const bestCarrierId = best?.carrier_id ?? null;
 
@@ -989,137 +1098,102 @@ export default function Index({ result }) {
               )}
             </Field>
 
-            {/* Provincia / Zona */}
-            {data.country_code === "ES" ? (
-              <Field
-                label="Provincia destino"
-                hint={
-                  selectedProvinceObj?.zone_name
-                    ? `Seleccionada: ${selectedProvinceObj.name} · ${selectedProvinceObj.zone_name}`
-                    : destinationDisabled
-                      ? "Selecciona primero un país."
-                      : "Escribe para buscar (ej. Zara, Mad...)"
-                }
-                error={errors.province_id}
-              >
-                <div ref={containerRef} className="relative">
+            {/* Selector ES: provincia */}
+            {isES ? (
+              <div ref={containerRef} className="relative">
+                <Field
+                  label="Provincia"
+                  error={errors.province_id}
+                  hint={destinationDisabled ? "Selecciona primero un país." : "Escribe para buscar."}
+                >
                   <input
                     value={query}
-                    disabled={destinationDisabled || loadingProvinces || !!provincesError}
+                    disabled={!data.country_code || data.country_code !== "ES" || loadingProvinces || !!provincesError}
                     onChange={(e) => {
                       setQuery(e.target.value);
                       setIsOpen(true);
                       setHighlightIndex(0);
-
                       setData("province_id", null);
-
-                      setData("carrier_ids", []);
                     }}
                     onFocus={() => setIsOpen(true)}
                     onKeyDown={onKeyDown}
-                    placeholder={
-                      destinationDisabled
-                        ? "Selecciona país primero…"
-                        : loadingProvinces
-                          ? "Cargando..."
-                          : "Buscar provincia..."
-                    }
+                    placeholder={loadingProvinces ? "Cargando…" : "Ej: Madrid"}
                     className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
                   />
-
-                  {isOpen && !destinationDisabled && !loadingProvinces && !provincesError && (
-                    <div className="absolute left-0 right-0 top-[42px] z-20 max-h-72 overflow-auto rounded-xl border border-ink-200 bg-white shadow-soft">
-                      {filtered.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-ink-500">Sin resultados.</div>
-                      ) : (
-                        filtered.map((p, idx) => (
-                          <div
-                            key={p.id}
-                            onMouseEnter={() => setHighlightIndex(idx)}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              selectProvince(p);
-
-                              setData("carrier_ids", []);
-                            }}
-                            className={[
-                              "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
-                              idx === highlightIndex ? "bg-ink-50" : "bg-white",
-                            ].join(" ")}
-                          >
-                            <span className="text-ink-800">{p.name}</span>
-                            <span className="whitespace-nowrap text-xs text-ink-500">{p.zone_name}</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                </Field>
 
                 {provincesError && (
                   <div className="mt-2 text-xs font-semibold text-red-600">
                     {provincesError} (revisa GET /api/provinces)
                   </div>
                 )}
-              </Field>
+
+                {isOpen && filtered.length > 0 && (
+                  <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
+                    {filtered.map((p, i) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => selectProvince(p)}
+                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                          i === highlightIndex ? "bg-brand-50 text-ink-900" : "hover:bg-ink-50"
+                        }`}
+                      >
+                        <span className="font-semibold">{p.name}</span>
+                        <span className="text-xs text-ink-500">{p.code}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
-              <Field
-                label="Zona destino"
-                hint={selectedZoneObj ? `Seleccionada: ${selectedZoneObj.name}` : "Escribe para buscar..."}
-                error={errors.zone_id}
-              >
-                <div ref={zoneRef} className="relative">
+              /* Selector NO ES: zona */
+              <div ref={zoneRef} className="relative">
+                <Field
+                  label="Zona"
+                  error={errors.zone_id}
+                  hint={destinationDisabled ? "Selecciona primero un país." : "Escribe para buscar."}
+                >
                   <input
                     value={zoneQuery}
-                    disabled={loadingZones || !!zonesError}
+                    disabled={!data.country_code || data.country_code === "ES" || loadingZones || !!zonesError}
                     onChange={(e) => {
                       setZoneQuery(e.target.value);
                       setZoneOpen(true);
                       setZoneHighlightIndex(0);
                       setData("zone_id", null);
-
-                      setData("carrier_ids", []);
                     }}
                     onFocus={() => setZoneOpen(true)}
                     onKeyDown={onZoneKeyDown}
-                    placeholder={loadingZones ? "Cargando..." : "Buscar zona..."}
+                    placeholder={loadingZones ? "Cargando…" : "Ej: Zone 1"}
                     className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
                   />
-
-                  {zoneOpen && !loadingZones && !zonesError && (
-                    <div className="absolute left-0 right-0 top-[42px] z-20 max-h-72 overflow-auto rounded-xl border border-ink-200 bg-white shadow-soft">
-                      {filteredZones.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-ink-500">Sin resultados.</div>
-                      ) : (
-                        filteredZones.map((z, idx) => (
-                          <div
-                            key={z.id}
-                            onMouseEnter={() => setZoneHighlightIndex(idx)}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              selectZone(z);
-
-                              setData("carrier_ids", []);
-                            }}
-                            className={[
-                              "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
-                              idx === zoneHighlightIndex ? "bg-ink-50" : "bg-white",
-                            ].join(" ")}
-                          >
-                            <span className="text-ink-800">{z.name}</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                </Field>
 
                 {zonesError && (
                   <div className="mt-2 text-xs font-semibold text-red-600">
                     {zonesError} (revisa GET /api/zones)
                   </div>
                 )}
-              </Field>
+
+                {zoneOpen && filteredZones.length > 0 && (
+                  <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
+                    {filteredZones.map((z, i) => (
+                      <button
+                        key={z.id}
+                        type="button"
+                        onClick={() => selectZone(z)}
+                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                          i === zoneHighlightIndex ? "bg-brand-50 text-ink-900" : "hover:bg-ink-50"
+                        }`}
+                      >
+                        <span className="font-semibold">{z.name}</span>
+                        <span className="text-xs text-ink-500">{z.code}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Transportistas */}
@@ -1252,7 +1326,9 @@ export default function Index({ result }) {
             <details className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
               <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-ink-900">
                 <span>Datos de cajas (actual)</span>
-                <span className="text-xs font-semibold text-ink-500">{boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}</span>
+                <span className="text-xs font-semibold text-ink-500">
+                  {boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}
+                </span>
               </summary>
 
               <div className="mt-3">
@@ -1294,37 +1370,147 @@ export default function Index({ result }) {
               </div>
             </details>
 
-            {/* Cantidades */}
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Mini PCs" error={errors.mini_pc}>
-                <input
-                  type="number"
-                  min="0"
-                  value={data.mini_pc}
-                  onChange={(e) => setData("mini_pc", Number(e.target.value))}
-                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                />
-              </Field>
+            {/* Modelos / Equipos (tabla dinámica) */}
+            <div className="rounded-2xl border border-ink-100 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-extrabold text-ink-900">Modelos / Equipos</div>
+                  <div className="mt-1 text-xs text-ink-500">Añade una línea por modelo y su cantidad.</div>
+                </div>
 
-              <Field label="Torres" error={errors.tower}>
-                <input
-                  type="number"
-                  min="0"
-                  value={data.tower}
-                  onChange={(e) => setData("tower", Number(e.target.value))}
-                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                />
-              </Field>
+                <button
+                  type="button"
+                  onClick={addLine}
+                  className="inline-flex items-center justify-center rounded-lg border border-ink-200 bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800"
+                >
+                  Añadir línea
+                </button>
+              </div>
 
-              <Field label="Portátiles" error={errors.laptop}>
-                <input
-                  type="number"
-                  min="0"
-                  value={data.laptop}
-                  onChange={(e) => setData("laptop", Number(e.target.value))}
-                  className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                />
-              </Field>
+              {loadingDeviceModels ? (
+                <div className="mt-3 text-sm text-ink-500">Cargando modelos…</div>
+              ) : deviceModelsError ? (
+                <div className="mt-3 text-xs font-semibold text-red-600">{deviceModelsError}</div>
+              ) : deviceModels.length === 0 ? (
+                <div className="mt-3 text-sm text-ink-500">
+                  No hay modelos disponibles. Crea alguno en la sección de modelos (API /admin).
+                </div>
+              ) : (
+                <div className="mt-3 overflow-hidden rounded-xl ring-1 ring-ink-100">
+                  <div className="grid grid-cols-[1fr_110px_40px] gap-0 bg-ink-50 px-3 py-2 text-xs font-extrabold text-ink-700">
+                    <div>Modelo</div>
+                    <div className="text-right">Cantidad</div>
+                    <div />
+                  </div>
+
+                  <div className="divide-y divide-ink-100">
+                    {(Array.isArray(data.lines) ? data.lines : []).map((line, idx) => {
+                      const selectedIds = new Set(
+                        (Array.isArray(data.lines) ? data.lines : [])
+                          .map((l) => l?.device_model_id)
+                          .filter(Boolean)
+                          .map((v) => Number(v))
+                      );
+
+                      const currentId = line?.device_model_id ? Number(line.device_model_id) : null;
+                      const qty = line?.qty ?? 0;
+
+                      const errModel = errors?.[`lines.${idx}.device_model_id`];
+                      const errQty = errors?.[`lines.${idx}.qty`];
+
+                      const dm = currentId ? deviceModelsById.get(currentId) : null;
+                      const boxCode = dm?.box_type?.code;
+
+                      return (
+                        <div key={idx} className="bg-white px-3 py-2">
+                          <div className="grid grid-cols-[1fr_110px_40px] items-start gap-2">
+                            <div>
+                              <select
+                                value={currentId ?? ""}
+                                onChange={(e) => {
+                                  const v = e.target.value ? Number(e.target.value) : null;
+                                  updateLine(idx, { device_model_id: v });
+                                }}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
+                              >
+                                <option value="">Selecciona modelo…</option>
+                                {deviceModels.map((m) => {
+                                  const id = Number(m.id);
+                                  const alreadyUsed = selectedIds.has(id) && id !== currentId;
+
+                                  const labelParts = [];
+                                  if (m.brand) labelParts.push(m.brand);
+                                  if (m.name) labelParts.push(m.name);
+                                  const label = labelParts.join(" ") || `Modelo #${id}`;
+                                  const extra = m.sku ? ` · ${m.sku}` : "";
+                                  const bt = m?.box_type?.code ? ` · ${m.box_type.code}` : "";
+
+                                  return (
+                                    <option key={id} value={id} disabled={alreadyUsed}>
+                                      {label}
+                                      {extra}
+                                      {bt}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+
+                              {(boxCode || errModel) && (
+                                <div className="mt-1 flex items-center justify-between gap-2">
+                                  {boxCode ? (
+                                    <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100">
+                                      Caja: {boxCode}
+                                    </span>
+                                  ) : (
+                                    <span />
+                                  )}
+
+                                  {errModel ? (
+                                    <span className="text-[10px] font-extrabold text-red-600">{errModel}</span>
+                                  ) : null}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="text-right">
+                              <input
+                                type="number"
+                                min="0"
+                                value={qty}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  updateLine(idx, { qty: v === "" ? "" : Number(v) });
+                                }}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
+                              />
+                              {errQty ? (
+                                <div className="mt-1 text-[10px] font-extrabold text-red-600">{errQty}</div>
+                              ) : null}
+                            </div>
+
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => removeLine(idx)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+                                title="Eliminar línea"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {!linesOk && (
+                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                  Añade al menos una línea con <b>modelo</b> y <b>cantidad &gt; 0</b>.
+                </div>
+              )}
             </div>
 
             {boxTypesDirtyNotice && (
@@ -1349,7 +1535,7 @@ export default function Index({ result }) {
           </form>
         </Card>
 
-        {/* Panel derecho */}
+                {/* Panel derecho */}
         <Card className="p-5">
           <div className="mx-auto flex items-center justify-center px-4 py-2">
             <div className="h-12 w-52 overflow-hidden flex items-center justify-center">
@@ -1870,162 +2056,100 @@ export default function Index({ result }) {
         </Card>
       </div>
 
+      {/* Modal box types */}
       {boxModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/40" onMouseDown={closeBoxTypesModal} />
-
-          <div className="relative z-10 w-[min(980px,92vw)] rounded-2xl bg-white shadow-soft ring-1 ring-ink-100">
-            <div className="flex items-start justify-between gap-4 border-b border-ink-100 p-5">
-              <div>
-                <div className="text-lg font-extrabold text-ink-900">Configuración de cajas</div>
-                <div className="mt-1 text-sm text-ink-500">Cambia dimensiones y peso por tipo. Afecta a la simulación.</div>
-              </div>
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 p-4">
+          <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-soft">
+            <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+              <div className="text-sm font-extrabold text-ink-900">Configurar tipos de caja</div>
               <button
                 type="button"
                 onClick={closeBoxTypesModal}
-                className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-extrabold text-ink-800 hover:bg-ink-50"
+                className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
               >
                 Cerrar
               </button>
             </div>
 
-            <div className="p-5">
+            <div className="max-h-[70vh] overflow-auto p-5">
               {loadingBoxTypes ? (
                 <div className="text-sm text-ink-500">Cargando…</div>
               ) : boxTypesError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  {boxTypesError} (revisa GET /api/box-types)
-                </div>
+                <div className="text-sm font-semibold text-red-600">{boxTypesError}</div>
               ) : boxTypes.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-ink-200 bg-ink-50 p-6 text-sm text-ink-600">
-                  No hay tipos de caja en la base de datos.
-                </div>
+                <div className="text-sm text-ink-500">No hay tipos de caja.</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[860px] w-full border-separate border-spacing-0">
-                    <thead>
-                      <tr className="text-left text-xs text-ink-500">
-                        <th className="py-2 pr-3">Código</th>
-                        <th className="py-2 pr-3">Nombre</th>
-                        <th className="py-2 pr-3">L (cm)</th>
-                        <th className="py-2 pr-3">W (cm)</th>
-                        <th className="py-2 pr-3">H (cm)</th>
-                        <th className="py-2 pr-3">Peso (kg)</th>
-                        <th className="py-2 pr-3"></th>
-                      </tr>
-                    </thead>
+                <div className="grid gap-3">
+                  {boxTypes.map((b) => (
+                    <div key={b.id} className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-extrabold text-ink-900">{b.name}</div>
+                          <div className="mt-1 text-xs text-ink-500">{b.code}</div>
+                        </div>
 
-                    <tbody className="text-sm text-ink-800">
-                      {boxTypes.map((b) => {
-                        const saving = !!savingBoxById[b.id];
-                        const msg = boxMsgById[b.id];
+                        <div className="flex items-center gap-2">
+                          {boxMsgById[b.id] && (
+                            <div className="text-xs font-extrabold text-ink-700">{boxMsgById[b.id]}</div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => saveBoxType(b.id)}
+                            disabled={!!savingBoxById[b.id]}
+                            className="rounded-xl bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800 disabled:opacity-60"
+                          >
+                            {savingBoxById[b.id] ? "Guardando…" : "Guardar"}
+                          </button>
+                        </div>
+                      </div>
 
-                        const L = Number(b.length_cm);
-                        const W = Number(b.width_cm);
-                        const H = Number(b.height_cm);
-                        const KG = Number(b.weight_kg);
+                      <div className="mt-3 grid grid-cols-4 gap-3">
+                        <Field label="Largo (cm)">
+                          <input
+                            type="number"
+                            value={b.length_cm}
+                            onChange={(e) => onBoxChange(b.id, "length_cm", Number(e.target.value))}
+                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                          />
+                        </Field>
 
-                        const rowValid =
-                          b.name &&
-                          b.name.trim().length > 0 &&
-                          Number.isFinite(L) &&
-                          L > 0 &&
-                          Number.isFinite(W) &&
-                          W > 0 &&
-                          Number.isFinite(H) &&
-                          H > 0 &&
-                          Number.isFinite(KG) &&
-                          KG > 0;
+                        <Field label="Ancho (cm)">
+                          <input
+                            type="number"
+                            value={b.width_cm}
+                            onChange={(e) => onBoxChange(b.id, "width_cm", Number(e.target.value))}
+                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                          />
+                        </Field>
 
-                        return (
-                          <tr key={b.id} className="border-t border-ink-100">
-                            <td className="py-3 pr-3 font-semibold">{b.code}</td>
+                        <Field label="Alto (cm)">
+                          <input
+                            type="number"
+                            value={b.height_cm}
+                            onChange={(e) => onBoxChange(b.id, "height_cm", Number(e.target.value))}
+                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                          />
+                        </Field>
 
-                            <td className="py-3 pr-3">
-                              <input
-                                value={b.name ?? ""}
-                                onChange={(e) => onBoxChange(b.id, "name", e.target.value)}
-                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </td>
-
-                            <td className="py-3 pr-3">
-                              <input
-                                type="number"
-                                min="1"
-                                value={b.length_cm ?? ""}
-                                onChange={(e) => onBoxChange(b.id, "length_cm", e.target.value)}
-                                className="w-28 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </td>
-
-                            <td className="py-3 pr-3">
-                              <input
-                                type="number"
-                                min="1"
-                                value={b.width_cm ?? ""}
-                                onChange={(e) => onBoxChange(b.id, "width_cm", e.target.value)}
-                                className="w-28 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </td>
-
-                            <td className="py-3 pr-3">
-                              <input
-                                type="number"
-                                min="1"
-                                value={b.height_cm ?? ""}
-                                onChange={(e) => onBoxChange(b.id, "height_cm", e.target.value)}
-                                className="w-28 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </td>
-
-                            <td className="py-3 pr-3">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                value={b.weight_kg ?? ""}
-                                onChange={(e) => onBoxChange(b.id, "weight_kg", e.target.value)}
-                                className="w-32 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </td>
-
-                            <td className="py-3 pr-3">
-                              <div className="flex items-center justify-end gap-3">
-                                {msg?.type === "ok" ? (
-                                  <span className="text-xs font-extrabold text-green-700">{msg.text}</span>
-                                ) : msg?.type === "err" ? (
-                                  <span className="text-xs font-extrabold text-red-600">{msg.text}</span>
-                                ) : null}
-
-                                {!rowValid && (
-                                  <div className="mt-1 text-xs font-semibold text-red-600">
-                                    Revisa nombre, medidas y peso (deben ser &gt; 0).
-                                  </div>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => saveBoxType(b)}
-                                  disabled={!rowValid || saving}
-                                  className="rounded-xl bg-ink-900 px-3 py-2 text-xs font-extrabold text-white shadow-soft transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  {saving ? "Guardando…" : "Guardar"}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-
-                  <div className="mt-3 text-xs text-ink-500">
-                    Recomendación: usa medidas reales de caja (no del equipo) y un peso medio por tipo.
-                  </div>
+                        <Field label="Peso (kg)">
+                          <input
+                            type="number"
+                            value={b.weight_kg}
+                            onChange={(e) => onBoxChange(b.id, "weight_kg", Number(e.target.value))}
+                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
+            </div>
+
+            <div className="border-t border-ink-100 px-5 py-4">
+              <div className="text-xs text-ink-500">
+                Cambios aquí afectan al cálculo de capas, altura y peso.
+              </div>
             </div>
           </div>
         </div>
