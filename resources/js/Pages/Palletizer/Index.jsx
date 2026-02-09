@@ -326,28 +326,38 @@ export default function Index({ result }) {
     return m;
   }, [deviceModels]);
 
+  const modelsSummaryRows = useMemo(() => {
+    const lines = Array.isArray(data.lines) ? data.lines : [];
 
-  const getLegacyCountsFromLines = useMemo(() => {
-    return () => {
-      const totals = { mini_pc: 0, tower: 0, laptop: 0 };
+    // Agrupar por device_model_id y sumar qty (solo qty > 0)
+    const acc = new Map();
 
-      const lines = Array.isArray(data.lines) ? data.lines : [];
-      for (const line of lines) {
-        const id = line?.device_model_id;
-        const qty = Number(line?.qty ?? 0);
-        if (!id || !Number.isFinite(qty) || qty <= 0) continue;
+    for (const l of lines) {
+      const id = Number(l?.device_model_id ?? 0);
+      const qty = Number(l?.qty ?? 0);
+      if (!id || !Number.isFinite(qty) || qty <= 0) continue;
 
-        const dm = deviceModelsById.get(Number(id));
-        const code = dm?.box_type?.code;
-        if (code && code in totals) {
-          totals[code] += qty;
-        }
+      const dm = deviceModelsById.get(id);
+      const brand = (l?.brand || dm?.brand || "—").trim();
+      const name = (dm?.name || "—").trim();
+
+      const key = String(id);
+      const prev = acc.get(key);
+      if (prev) {
+        prev.qty += qty;
+      } else {
+        acc.set(key, { id, brand, name, qty });
       }
+    }
 
-      return totals;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Orden: marca -> modelo
+    return Array.from(acc.values()).sort((a, b) => {
+      const c1 = a.brand.localeCompare(b.brand);
+      if (c1 !== 0) return c1;
+      return a.name.localeCompare(b.name);
+    });
   }, [data.lines, deviceModelsById]);
+
 
   // Autocomplete zonas
   const [zoneQuery, setZoneQuery] = useState("");
@@ -369,6 +379,12 @@ export default function Index({ result }) {
 
   const [savingBoxById, setSavingBoxById] = useState({});
   const [boxMsgById, setBoxMsgById] = useState({});
+
+  // --- Model modal ---
+  const [modelsModalOpen, setModelsModalOpen] = useState(false);
+  const openModelsModal = () => setModelsModalOpen(true);
+  const closeModelsModal = () => setModelsModalOpen(false);
+
 
   // Exportacion de docs
   const [exporting, setExporting] = useState(false);
@@ -671,13 +687,13 @@ export default function Index({ result }) {
 
   const addLine = () => {
     const next = Array.isArray(data.lines) ? [...data.lines] : [];
-    next.push({ device_model_id: null, qty: 0 });
+    next.push({ brand: "", device_model_id: null, model_query: "", qty: 0, box_condition: "new" });
     setData("lines", next);
   };
 
   const removeLine = (idx) => {
     const next = Array.isArray(data.lines) ? data.lines.filter((_, i) => i !== idx) : [];
-    setData("lines", next.length > 0 ? next : [{ device_model_id: null, qty: 0 }]);
+    setData("lines", next.length > 0 ? next : [{ brand: "", device_model_id: null, model_query: "", qty: 0, box_condition: "new" }]);
   };
 
   const updateLine = (idx, patch) => {
@@ -691,6 +707,7 @@ export default function Index({ result }) {
   const submit = (e) => {
     e.preventDefault();
     setBoxTypesDirtyNotice(false);
+    setModelsModalOpen(false);
 
     try {
       if (typeof route === "function") {
@@ -967,6 +984,56 @@ export default function Index({ result }) {
     if (Number(data.laptop) !== totals.laptop) setData("laptop", totals.laptop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.lines, deviceModelsById]);
+
+  const linesSummary = useMemo(() => {
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+
+    // solo líneas útiles (modelo seleccionado y qty > 0)
+    const picked = lines
+      .map((l, idx) => ({ ...l, __idx: idx }))
+      .filter((l) => l?.device_model_id && Number(l?.qty ?? 0) > 0);
+
+    const items = picked.map((l) => {
+      const dm = deviceModelsById.get(Number(l.device_model_id));
+      return {
+        idx: l.__idx,
+        brand: l.brand || dm?.brand || "—",
+        name: dm?.name || "—",
+        sku: dm?.sku || null,
+        boxCode: dm?.box_type?.code || null,
+        qty: Number(l.qty ?? 0),
+        boxCondition: l.box_condition ?? "new", // new | reuse (solo UI)
+      };
+    });
+
+    const totals = {
+      lines: items.length,
+      qty: items.reduce((s, it) => s + (Number(it.qty) || 0), 0),
+    };
+
+    return { items, totals };
+  }, [data.lines, deviceModelsById]);
+
+
+  const brands = useMemo(() => {
+    const set = new Set();
+    for (const m of deviceModels) {
+      if (m?.brand) set.add(String(m.brand));
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [deviceModels]);
+
+  const modelLabel = (m) => {
+    if (!m) return "";
+    const labelParts = [];
+    if (m.name) labelParts.push(m.name);
+    const label = labelParts.join(" ");
+    const extra = m.sku ? ` · ${m.sku}` : "";
+    const bt = m?.box_type?.code ? ` · ${m.box_type.code}` : "";
+    /* return `${label}${extra}${bt}`.trim(); */ // Añadiendo el SKU y tipo de caja al label del modelo
+    return `${label}`.trim();
+  };
+
 
   // Fetch de zonas si el país no es ES
   useEffect(() => {
@@ -1406,136 +1473,82 @@ export default function Index({ result }) {
             </details>
 
             {/* Modelos / Equipos (tabla dinámica) */}
-            <div className="rounded-2xl border border-ink-100 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-extrabold text-ink-900">Modelos / Equipos</div>
-                  <div className="mt-1 text-xs text-ink-500">Añade una línea por modelo y su cantidad.</div>
+            {/* Modelos / Equipos */}
+            <div className="rounded-2xl border border-ink-100 p-4">
+              <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-ink-900">
+                <span>Modelos / equipos (actual)</span>
+                <span className="text-xs font-semibold text-ink-500">
+                  {modelsSummaryRows.length > 0 ? `${modelsSummaryRows.length} modelos` : "Sin líneas"}
+                </span>
+              </summary>
+
+              <div className="mt-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs text-ink-500">Líneas usadas para el cálculo</div>
+
+                  <button
+                    type="button"
+                    onClick={openModelsModal}
+                    className="inline-flex w-auto items-center justify-center rounded-lg border border-ink-200 bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800"
+                  >
+                    Configurar modelos
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="inline-flex items-center justify-center rounded-lg border border-ink-200 bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800"
-                >
-                  Añadir línea
-                </button>
-              </div>
-
-              {loadingDeviceModels ? (
-                <div className="mt-3 text-sm text-ink-500">Cargando modelos…</div>
-              ) : deviceModelsError ? (
-                <div className="mt-3 text-xs font-semibold text-red-600">{deviceModelsError}</div>
-              ) : deviceModels.length === 0 ? (
-                <div className="mt-3 text-sm text-ink-500">
-                  No hay modelos disponibles. Crea alguno antes de calcular.
+                {/* Chips compactos (opcional) */}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Mini: {Number(data.mini_pc ?? 0)}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Torres: {Number(data.tower ?? 0)}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Portátiles: {Number(data.laptop ?? 0)}
+                  </span>
                 </div>
-              ) : (
-                <div className="mt-3 overflow-hidden rounded-xl ring-1 ring-ink-100">
-                  <div className="grid grid-cols-[1fr_110px_40px] gap-0 bg-ink-50 px-3 py-2 text-xs font-extrabold text-ink-700">
+
+                {/* Mini tabla resumen */}
+                <div className="mt-3 overflow-hidden rounded-xl bg-white ring-1 ring-ink-100">
+                  <div className="grid grid-cols-[120px_minmax(0,1fr)_70px] items-center gap-2 bg-ink-50 px-3 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
+                    <div>Marca</div>
                     <div>Modelo</div>
-                    <div className="text-right">Cantidad</div>
-                    <div />
+                    <div className="text-right">Uds</div>
                   </div>
 
-                  <div className="divide-y divide-ink-100">
-                    {(Array.isArray(data.lines) ? data.lines : []).map((line, idx) => {
-                      const selectedIds = new Set(
-                        (Array.isArray(data.lines) ? data.lines : [])
-                          .map((l) => l?.device_model_id)
-                          .filter(Boolean)
-                          .map((v) => Number(v))
-                      );
-
-                      const currentId = line?.device_model_id ? Number(line.device_model_id) : null;
-                      const qty = line?.qty ?? 0;
-
-                      const errModel = errors?.[`lines.${idx}.device_model_id`];
-                      const errQty = errors?.[`lines.${idx}.qty`];
-
-                      const dm = currentId ? deviceModelsById.get(currentId) : null;
-                      const boxCode = dm?.box_type?.code;
-
-                      return (
-                        <div key={idx} className="bg-white px-3 py-2">
-                          <div className="grid grid-cols-[1fr_110px_40px] items-start gap-2">
-                            <div>
-                              <select
-                                value={currentId ?? ""}
-                                onChange={(e) => {
-                                  const v = e.target.value ? Number(e.target.value) : null;
-                                  updateLine(idx, { device_model_id: v });
-                                }}
-                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
-                              >
-                                <option value="">Selecciona modelo…</option>
-                                {deviceModels.map((m) => {
-                                  const id = Number(m.id);
-                                  const alreadyUsed = selectedIds.has(id) && id !== currentId;
-
-                                  const labelParts = [];
-                                  if (m.brand) labelParts.push(m.brand);
-                                  if (m.name) labelParts.push(m.name);
-                                  const label = labelParts.join(" ") || `Modelo #${id}`;
-                                  const extra = m.sku ? ` · ${m.sku}` : "";
-                                  const bt = m?.box_type?.code ? ` · ${m.box_type.code}` : "";
-
-                                  return (
-                                    <option key={id} value={id} disabled={alreadyUsed}>
-                                      {label}{extra}{bt}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-
-                              {(boxCode || errModel) && (
-                                <div className="mt-1 flex items-center justify-between gap-2">
-                                  {boxCode ? (
-                                    <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100">
-                                      Caja: {boxCode}
-                                    </span>
-                                  ) : <span />}
-
-                                  {errModel ? (
-                                    <span className="text-[10px] font-extrabold text-red-600">{errModel}</span>
-                                  ) : null}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="text-right">
-                              <input
-                                type="number"
-                                min="0"
-                                value={qty}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  updateLine(idx, { qty: v === "" ? "" : Number(v) });
-                                }}
-                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
-                              />
-                              {errQty ? (
-                                <div className="mt-1 text-[10px] font-extrabold text-red-600">{errQty}</div>
-                              ) : null}
-                            </div>
-
-                            <div className="flex items-center justify-end">
-                              <button
-                                type="button"
-                                onClick={() => removeLine(idx)}
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
-                                title="Eliminar línea"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </div>
+                  {modelsSummaryRows.length === 0 ? (
+                    <div className="px-3 py-3 text-sm font-semibold text-ink-600">
+                      No hay modelos añadidos todavía.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-ink-100">
+                      {modelsSummaryRows.slice(0, 6).map((r) => (
+                        <div
+                          key={r.id}
+                          className="grid grid-cols-[120px_minmax(0,1fr)_70px] items-center gap-2 px-3 py-2 text-sm"
+                        >
+                          <div className="truncate font-semibold text-ink-800">{r.brand}</div>
+                          <div className="truncate text-ink-800">{r.name}</div>
+                          <div className="text-right font-extrabold text-ink-900">{r.qty}</div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      ))}
+
+                      {modelsSummaryRows.length > 6 ? (
+                        <div className="px-3 py-2 text-xs font-semibold text-ink-500">
+                          + {modelsSummaryRows.length - 6} más…
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
-              )}
+
+                {/* Errores */}
+                {errors?.lines && (
+                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                    {errors.lines}
+                  </div>
+                )}
+              </div>
             </div>
 
 
@@ -2175,6 +2188,243 @@ export default function Index({ result }) {
             <div className="border-t border-ink-100 px-5 py-4">
               <div className="text-xs text-ink-500">
                 Cambios aquí afectan al cálculo de capas, altura y peso.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal device models */}
+      {modelsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 p-4">
+          <div className="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-soft">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+              <div>
+                <div className="text-sm font-extrabold text-ink-900">Modelos / Equipos</div>
+                <div className="mt-1 text-xs text-ink-500">
+                  Añade una línea por modelo y su cantidad.
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={addLine}
+                  className="rounded-xl bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800"
+                >
+                  Añadir línea
+                </button>
+
+                <button
+                  type="button"
+                  onClick={closeModelsModal}
+                  className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="max-h-[70vh] overflow-auto p-5">
+              {loadingDeviceModels ? (
+                <div className="text-sm text-ink-500">Cargando modelos…</div>
+              ) : deviceModelsError ? (
+                <div className="text-xs font-semibold text-red-600">{deviceModelsError}</div>
+              ) : deviceModels.length === 0 ? (
+                <div className="text-sm text-ink-500">No hay modelos disponibles. Crea alguno antes de calcular.</div>
+              ) : (
+                <div className="overflow-hidden rounded-2xl ring-1 ring-ink-100 bg-white">
+                  {/* Cabecera */}
+                  <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-center gap-2 bg-ink-50 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
+                    <div>Marca</div>
+                    <div>Modelo</div>
+                    <div className="text-right">Cantidad</div>
+                    <div className="text-center">Caja</div>
+                    <div />
+                  </div>
+
+                  <div className="divide-y divide-ink-100">
+                    {(Array.isArray(data.lines) ? data.lines : []).map((line, idx) => {
+                      const brand = line?.brand ?? "";
+                      const qty = line?.qty ?? 0;
+                      const currentId = line?.device_model_id ? Number(line.device_model_id) : null;
+                      const query = line?.model_query ?? "";
+
+                      const errBrand = errors?.[`lines.${idx}.brand`];
+                      const errModel = errors?.[`lines.${idx}.device_model_id`];
+                      const errQty = errors?.[`lines.${idx}.qty`];
+
+                      const modelsForBrand = deviceModels.filter((m) => {
+                        if (!brand) return false;
+                        return String(m.brand || "") === String(brand);
+                      });
+
+                      const filteredModels = (() => {
+                        const q = normalize(query);
+                        if (!q) return modelsForBrand.slice(0, 12);
+
+                        const starts = [];
+                        const contains = [];
+
+                        for (const m of modelsForBrand) {
+                          const nameN = normalize(`${m.name ?? ""} ${m.sku ?? ""} ${m.box_type?.code ?? ""}`);
+                          if (nameN.startsWith(q)) starts.push(m);
+                          else if (nameN.includes(q)) contains.push(m);
+                        }
+
+                        return [...starts, ...contains].slice(0, 12);
+                      })();
+
+                      const selectedModel = currentId ? deviceModelsById.get(currentId) : null;
+                      const boxCode = selectedModel?.box_type?.code;
+
+                      return (
+                        <div key={idx} className="px-4 py-3">
+                          <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-start gap-2">
+                            {/* Marca */}
+                            <div>
+                              <select
+                                value={brand}
+                                onChange={(e) => {
+                                  const nextBrand = e.target.value;
+                                  updateLine(idx, { brand: nextBrand, device_model_id: null, model_query: "" });
+                                }}
+                                className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
+                              >
+                                <option value="">Marca…</option>
+                                {brands.map((b) => (
+                                  <option key={b} value={b}>
+                                    {b}
+                                  </option>
+                                ))}
+                              </select>
+                              {errBrand ? (
+                                <div className="mt-1 text-[10px] font-extrabold text-red-600">{errBrand}</div>
+                              ) : null}
+                            </div>
+
+                            {/* Modelo autocomplete */}
+                            <div className="relative">
+                              <input
+                                value={currentId ? modelLabel(selectedModel) : query}
+                                onChange={(e) => updateLine(idx, { device_model_id: null, model_query: e.target.value })}
+                                placeholder={brand ? "Escribe para buscar modelo…" : "Selecciona marca primero…"}
+                                disabled={!brand}
+                                className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                              />
+
+                              <div className="mt-1 flex items-center justify-between gap-2">
+                                {boxCode ? (
+                                  <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100">
+                                    Caja: {boxCode}
+                                  </span>
+                                ) : <span />}
+
+                                {errModel ? (
+                                  <span className="text-[10px] font-extrabold text-red-600">{errModel}</span>
+                                ) : null}
+                              </div>
+
+                              {brand && !currentId && filteredModels.length > 0 && (
+                                <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
+                                  {filteredModels.map((m) => (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => updateLine(idx, { device_model_id: Number(m.id), model_query: "" })}
+                                      className="block w-full px-3 py-2 text-left text-[13px] font-semibold text-ink-800 hover:bg-brand-50"
+                                      title={modelLabel(m)}
+                                    >
+                                      <div className="truncate">{modelLabel(m)}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Cantidad */}
+                            <div className="text-right">
+                              <input
+                                type="number"
+                                min="0"
+                                value={qty}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  updateLine(idx, { qty: v === "" ? "" : Number(v) });
+                                }}
+                                className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2 text-right"
+                              />
+                              {errQty ? (
+                                <div className="mt-1 text-[10px] font-extrabold text-red-600">{errQty}</div>
+                              ) : null}
+                            </div>
+
+                            {/* Caja (UI placeholder) */}
+                            <div className="flex items-center justify-center">
+                              <div className="inline-flex h-10 items-center rounded-xl border border-ink-200 bg-white p-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => updateLine(idx, { box_condition: "new" })}
+                                  className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "new"
+                                    ? "bg-ink-900 text-white"
+                                    : "text-ink-700 hover:bg-ink-50"
+                                    }`}
+                                >
+                                  Nueva
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateLine(idx, { box_condition: "reuse" })}
+                                  className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "reuse"
+                                    ? "bg-ink-900 text-white"
+                                    : "text-ink-700 hover:bg-ink-50"
+                                    }`}
+                                >
+                                  Reutil.
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Eliminar */}
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => removeLine(idx)}
+                                className="inline-flex h-10 w-12 items-center justify-center rounded-xl border border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+                                title="Eliminar línea"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-ink-100 px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-ink-500">
+                  Cambios aquí afectan al cálculo (se sincroniza con mini/torre/portátil mientras el service sea legacy).
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-ink-50 px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Mini: {Number(data.mini_pc ?? 0)}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-ink-50 px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Torres: {Number(data.tower ?? 0)}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-ink-50 px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Portátiles: {Number(data.laptop ?? 0)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
