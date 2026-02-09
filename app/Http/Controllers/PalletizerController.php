@@ -25,6 +25,10 @@ class PalletizerController extends Controller
             'province_id' => ['nullable', 'integer', 'exists:provinces,id', 'required_if:country_code,ES'],
             'zone_id' => ['nullable', 'integer', 'exists:zones,id', 'required_unless:country_code,ES'],
 
+            'lines' => ['nullable', 'array', 'min:1'],
+            'lines.*.device_model_id' => ['nullable', 'integer', 'exists:device_models,id'],
+            'lines.*.qty' => ['nullable', 'integer', 'min:0'],
+
             'mini_pc'  => ['required', 'integer', 'min:0'],
             'tower'    => ['required', 'integer', 'min:0'],
             'laptop'   => ['required', 'integer', 'min:0'],
@@ -63,6 +67,96 @@ class PalletizerController extends Controller
             }
             $destinationLabel = $zone->name;
         }
+
+         // ------------------------------------------------------------
+        // NUEVO: Si llegan líneas {device_model_id, qty}, convertir a items legacy
+        // (Esto mantiene PalletizationService sin cambios mientras migramos)
+        // ------------------------------------------------------------
+        if (!empty($data['lines']) && is_array($data['lines'])) {
+            $lines = $data['lines'];
+
+            // Validación adicional: al menos una línea con qty > 0 y device_model_id informado
+            $any = false;
+            $ids = [];
+            foreach ($lines as $i => $line) {
+                $qty = (int) ($line['qty'] ?? 0);
+                $id  = $line['device_model_id'] ?? null;
+
+                if ($qty > 0) {
+                    $any = true;
+                    if (!$id) {
+                        return back()->withErrors([
+                            "lines.$i.device_model_id" => 'Selecciona un modelo para esta línea.',
+                        ]);
+                    }
+                }
+
+                if ($id) {
+                    $id = (int) $id;
+                    if (isset($ids[$id])) {
+                        return back()->withErrors([
+                            "lines.$i.device_model_id" => 'No repitas el mismo modelo en varias líneas.',
+                        ]);
+                    }
+                    $ids[$id] = true;
+                }
+
+                if ($qty < 0) {
+                    return back()->withErrors([
+                        "lines.$i.qty" => 'La cantidad no puede ser negativa.',
+                    ]);
+                }
+            }
+
+            if (!$any) {
+                return back()->withErrors([
+                    'lines' => 'Añade al menos una línea con cantidad mayor que 0.',
+                ]);
+            }
+
+            // Cargar modelos y su box_type.code para mapear a mini_pc/tower/laptop
+            $modelRows = DB::table('device_models as dm')
+                ->join('box_types as bt', 'bt.id', '=', 'dm.box_type_id')
+                ->whereIn('dm.id', array_keys($ids))
+                ->select('dm.id', 'bt.code as box_code')
+                ->get();
+
+            $boxByModelId = [];
+            foreach ($modelRows as $r) {
+                $boxByModelId[(int)$r->id] = (string)$r->box_code;
+            }
+
+            $totals = ['mini_pc' => 0, 'tower' => 0, 'laptop' => 0];
+
+            foreach ($lines as $i => $line) {
+                $qty = (int) ($line['qty'] ?? 0);
+                $id  = (int) ($line['device_model_id'] ?? 0);
+
+                if ($qty <= 0) continue;
+
+                $code = $boxByModelId[$id] ?? null;
+                if (!$code) {
+                    return back()->withErrors([
+                        "lines.$i.device_model_id" => 'Modelo no encontrado.',
+                    ]);
+                }
+
+                // Mientras el service sea legacy, solo aceptamos estos 3 códigos
+                if (!array_key_exists($code, $totals)) {
+                    return back()->withErrors([
+                        "lines.$i.device_model_id" => "El tipo de caja '{$code}' no está soportado todavía en el cálculo (solo mini_pc, tower, laptop).",
+                    ]);
+                }
+
+                $totals[$code] += $qty;
+            }
+
+            // Sobrescribir valores legacy para que el cálculo siga funcionando
+            $data['mini_pc'] = $totals['mini_pc'];
+            $data['tower']   = $totals['tower'];
+            $data['laptop']  = $totals['laptop'];
+        }
+
 
         $items = [
             'mini_pc' => (int) $data['mini_pc'],

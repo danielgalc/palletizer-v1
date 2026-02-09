@@ -18,6 +18,56 @@ class MasterDataSeeder extends Seeder
             ['code' => 'tower',   'name' => 'Torre oficina',  'length_cm' => 60, 'width_cm' => 30, 'height_cm' => 25, 'weight_kg' => 10.00, 'created_at' => now(), 'updated_at' => now()],
         ], ['code'], ['name', 'length_cm', 'width_cm', 'height_cm', 'weight_kg', 'updated_at']);
 
+
+        $boxTypeId = fn (string $code) => DB::table('box_types')->where('code', $code)->value('id');
+
+        // -------------------------
+        // DEVICE MODELS (demo)
+        // -------------------------
+        DB::table('device_models')->upsert([
+            [
+                'brand' => 'Lenovo',
+                'name' => 'ThinkPad T14 Gen 2',
+                'sku' => 'LEN-T14G2',
+                'box_type_id' => $boxTypeId('laptop'),
+                'weight_kg' => 4.20,
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'brand' => 'Dell',
+                'name' => 'Latitude 5400',
+                'sku' => 'DEL-LAT5400',
+                'box_type_id' => $boxTypeId('laptop'),
+                'weight_kg' => 4.10,
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'brand' => 'HP',
+                'name' => 'EliteDesk 800 G5 Mini',
+                'sku' => 'HP-ED800G5M',
+                'box_type_id' => $boxTypeId('mini_pc'),
+                'weight_kg' => 3.20,
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'brand' => 'Dell',
+                'name' => 'OptiPlex 7080 Tower',
+                'sku' => 'DEL-OP7080T',
+                'box_type_id' => $boxTypeId('tower'),
+                'weight_kg' => 10.80,
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ], ['sku'], ['brand', 'name', 'box_type_id', 'weight_kg', 'is_active', 'updated_at']);
+
+
         // -------------------------
         // PALLET TYPES
         // -------------------------

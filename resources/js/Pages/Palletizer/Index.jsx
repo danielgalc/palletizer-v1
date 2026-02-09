@@ -294,20 +294,20 @@ export default function Index({ result }) {
     zone_id: null,
     province_id: null,
 
-    // NUEVO: líneas dinámicas por modelo/equipo
+    // Líneas dinámicas por modelo/equipo
     lines: [{ device_model_id: null, qty: 0 }],
 
-    // LEGACY (se mantiene para compatibilidad mientras el backend/export siga esperando 3 campos)
+    // Se mantiene mientras espera equipos
     mini_pc: 0,
     tower: 0,
     laptop: 0,
 
     allow_separators: true,
 
-    // Carriers
     carrier_mode: "auto", // auto | manual
     carrier_ids: [],
   });
+
 
   const [provinces, setProvinces] = useState([]);
   const [loadingProvinces, setLoadingProvinces] = useState(true);
@@ -325,6 +325,7 @@ export default function Index({ result }) {
     }
     return m;
   }, [deviceModels]);
+
 
   const getLegacyCountsFromLines = useMemo(() => {
     return () => {
@@ -640,6 +641,53 @@ export default function Index({ result }) {
     }
   };
 
+  // Modelos useEffect
+  useEffect(() => {
+    let cancelled = false;
+
+    setLoadingDeviceModels(true);
+    setDeviceModelsError(null);
+
+    fetch("/api/device-models?only_active=1")
+      .then((r) => {
+        if (!r.ok) throw new Error("No se pudieron cargar los modelos");
+        return r.json();
+      })
+      .then((list) => {
+        if (cancelled) return;
+        setDeviceModels(Array.isArray(list) ? list : []);
+        setLoadingDeviceModels(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setLoadingDeviceModels(false);
+        setDeviceModelsError(e.message || "Error cargando modelos");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const addLine = () => {
+    const next = Array.isArray(data.lines) ? [...data.lines] : [];
+    next.push({ device_model_id: null, qty: 0 });
+    setData("lines", next);
+  };
+
+  const removeLine = (idx) => {
+    const next = Array.isArray(data.lines) ? data.lines.filter((_, i) => i !== idx) : [];
+    setData("lines", next.length > 0 ? next : [{ device_model_id: null, qty: 0 }]);
+  };
+
+  const updateLine = (idx, patch) => {
+    const next = Array.isArray(data.lines) ? [...data.lines] : [];
+    const curr = next[idx] || { device_model_id: null, qty: 0 };
+    next[idx] = { ...curr, ...patch };
+    setData("lines", next);
+  };
+
+
   const submit = (e) => {
     e.preventDefault();
     setBoxTypesDirtyNotice(false);
@@ -815,19 +863,15 @@ export default function Index({ result }) {
       const qty = Number(l?.qty ?? 0);
       const id = l?.device_model_id;
 
-      // No permitir negativos
-      if (Number.isFinite(qty) && qty < 0) return false;
-
-      // Si hay qty, debe haber modelo
-      if (qty > 0 && !id) return false;
-
-      // Si hay modelo, qty debe ser >= 0 (y para contar, > 0)
-      if (id && !Number.isFinite(qty)) return false;
+      if (Number.isFinite(qty) && qty < 0) return false;     // no negativos
+      if (qty > 0 && !id) return false;                       // si hay qty, debe haber modelo
+      if (id && !Number.isFinite(qty)) return false;          // qty debe ser numérica
       if (id && qty > 0) any = true;
     }
 
     return any;
   }, [data.lines]);
+
 
   const canSubmit =
     !processing &&
@@ -903,33 +947,26 @@ export default function Index({ result }) {
     };
   }, []);
 
-  // Mantener legacy mini_pc/tower/laptop sincronizado con las líneas (para export / compat)
+  // Mantener legacy mini_pc/tower/laptop sincronizado con las líneas (para export / compat) REVISAR
   useEffect(() => {
-    const totals = getLegacyCountsFromLines();
+    const totals = { mini_pc: 0, tower: 0, laptop: 0 };
+
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    for (const line of lines) {
+      const id = line?.device_model_id;
+      const qty = Number(line?.qty ?? 0);
+      if (!id || !Number.isFinite(qty) || qty <= 0) continue;
+
+      const dm = deviceModelsById.get(Number(id));
+      const code = dm?.box_type?.code; // debe venir desde /api/device-models (json_build_object)
+      if (code && code in totals) totals[code] += qty;
+    }
 
     if (Number(data.mini_pc) !== totals.mini_pc) setData("mini_pc", totals.mini_pc);
     if (Number(data.tower) !== totals.tower) setData("tower", totals.tower);
     if (Number(data.laptop) !== totals.laptop) setData("laptop", totals.laptop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.lines, deviceModelsById]);
-
-  const addLine = () => {
-    const next = Array.isArray(data.lines) ? [...data.lines] : [];
-    next.push({ device_model_id: null, qty: 0 });
-    setData("lines", next);
-  };
-
-  const removeLine = (idx) => {
-    const next = Array.isArray(data.lines) ? data.lines.filter((_, i) => i !== idx) : [];
-    setData("lines", next.length > 0 ? next : [{ device_model_id: null, qty: 0 }]);
-  };
-
-  const updateLine = (idx, patch) => {
-    const next = Array.isArray(data.lines) ? [...data.lines] : [];
-    const curr = next[idx] || { device_model_id: null, qty: 0 };
-    next[idx] = { ...curr, ...patch };
-    setData("lines", next);
-  };
 
   // Fetch de zonas si el país no es ES
   useEffect(() => {
@@ -1135,9 +1172,8 @@ export default function Index({ result }) {
                         key={p.id}
                         type="button"
                         onClick={() => selectProvince(p)}
-                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                          i === highlightIndex ? "bg-brand-50 text-ink-900" : "hover:bg-ink-50"
-                        }`}
+                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${i === highlightIndex ? "bg-brand-50 text-ink-900" : "hover:bg-ink-50"
+                          }`}
                       >
                         <span className="font-semibold">{p.name}</span>
                         <span className="text-xs text-ink-500">{p.code}</span>
@@ -1183,9 +1219,8 @@ export default function Index({ result }) {
                         key={z.id}
                         type="button"
                         onClick={() => selectZone(z)}
-                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                          i === zoneHighlightIndex ? "bg-brand-50 text-ink-900" : "hover:bg-ink-50"
-                        }`}
+                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${i === zoneHighlightIndex ? "bg-brand-50 text-ink-900" : "hover:bg-ink-50"
+                          }`}
                       >
                         <span className="font-semibold">{z.name}</span>
                         <span className="text-xs text-ink-500">{z.code}</span>
@@ -1393,7 +1428,7 @@ export default function Index({ result }) {
                 <div className="mt-3 text-xs font-semibold text-red-600">{deviceModelsError}</div>
               ) : deviceModels.length === 0 ? (
                 <div className="mt-3 text-sm text-ink-500">
-                  No hay modelos disponibles. Crea alguno en la sección de modelos (API /admin).
+                  No hay modelos disponibles. Crea alguno antes de calcular.
                 </div>
               ) : (
                 <div className="mt-3 overflow-hidden rounded-xl ring-1 ring-ink-100">
@@ -1447,9 +1482,7 @@ export default function Index({ result }) {
 
                                   return (
                                     <option key={id} value={id} disabled={alreadyUsed}>
-                                      {label}
-                                      {extra}
-                                      {bt}
+                                      {label}{extra}{bt}
                                     </option>
                                   );
                                 })}
@@ -1461,9 +1494,7 @@ export default function Index({ result }) {
                                     <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100">
                                       Caja: {boxCode}
                                     </span>
-                                  ) : (
-                                    <span />
-                                  )}
+                                  ) : <span />}
 
                                   {errModel ? (
                                     <span className="text-[10px] font-extrabold text-red-600">{errModel}</span>
@@ -1505,13 +1536,8 @@ export default function Index({ result }) {
                   </div>
                 </div>
               )}
-
-              {!linesOk && (
-                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
-                  Añade al menos una línea con <b>modelo</b> y <b>cantidad &gt; 0</b>.
-                </div>
-              )}
             </div>
+
 
             {boxTypesDirtyNotice && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
@@ -1535,7 +1561,7 @@ export default function Index({ result }) {
           </form>
         </Card>
 
-                {/* Panel derecho */}
+        {/* Panel derecho */}
         <Card className="p-5">
           <div className="mx-auto flex items-center justify-center px-4 py-2">
             <div className="h-12 w-52 overflow-hidden flex items-center justify-center">
@@ -1936,7 +1962,7 @@ export default function Index({ result }) {
                                     </div>
 
                                     {/* Mini línea secundaria opcional (detalle corto) */}
-                      
+
                                   </div>
                                 </td>
 

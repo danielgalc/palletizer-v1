@@ -20,7 +20,6 @@ return new class extends Migration {
                 ->cascadeOnUpdate();
 
             $table->decimal('weight_kg', 6, 2)->nullable();
-
             $table->boolean('is_active')->default(true);
 
             $table->timestamps();
