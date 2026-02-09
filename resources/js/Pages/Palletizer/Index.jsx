@@ -381,6 +381,8 @@ export default function Index({ result }) {
   const [boxMsgById, setBoxMsgById] = useState({});
 
   // --- Model modal ---
+  const [openModelRowIdx, setOpenModelRowIdx] = useState(null);
+  const modelRowRefs = useRef({});
   const [modelsModalOpen, setModelsModalOpen] = useState(false);
   const openModelsModal = () => setModelsModalOpen(true);
   const closeModelsModal = () => setModelsModalOpen(false);
@@ -656,6 +658,30 @@ export default function Index({ result }) {
       setZoneOpen(false);
     }
   };
+
+  // Cerrar con click fuera el modal de modelos
+  useEffect(() => {
+    if (!modelsModalOpen) return;
+
+    const onMouseDown = (e) => {
+      if (openModelRowIdx === null) return;
+
+      const el = modelRowRefs.current[openModelRowIdx];
+      if (!el) {
+        setOpenModelRowIdx(null);
+        return;
+      }
+
+      // Si el click NO está dentro del contenedor de esa fila (input+dropdown), cerramos
+      if (!el.contains(e.target)) {
+        setOpenModelRowIdx(null);
+      }
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [modelsModalOpen, openModelRowIdx]);
+
 
   // Modelos useEffect
   useEffect(() => {
@@ -2219,7 +2245,7 @@ export default function Index({ result }) {
                 <button
                   type="button"
                   onClick={closeModelsModal}
-                  className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
+                  className="rounded-xl border border-ink-200 bg-WHITE px-3 py-1.5 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
                 >
                   Cerrar
                 </button>
@@ -2235,180 +2261,203 @@ export default function Index({ result }) {
               ) : deviceModels.length === 0 ? (
                 <div className="text-sm text-ink-500">No hay modelos disponibles. Crea alguno antes de calcular.</div>
               ) : (
-                <div className="overflow-hidden rounded-2xl ring-1 ring-ink-100 bg-white">
-                  {/* Cabecera */}
-                  <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-center gap-2 bg-ink-50 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
-                    <div>Marca</div>
-                    <div>Modelo</div>
-                    <div className="text-right">Cantidad</div>
-                    <div className="text-center">Caja</div>
-                    <div />
+                <div className="my-2 rounded-2xl ring-1 ring-ink-100 bg-white">
+                  <div className="overflow-hidden rounded-2xl">
+                    {/* Cabecera */}
+                    <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-center gap-2 bg-ink-50 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
+                      <div>Marca</div>
+                      <div>Modelo</div>
+                      <div className="text-right">Cantidad</div>
+                      <div className="text-center">Caja</div>
+                      <div />
+                    </div>
                   </div>
 
-                  <div className="divide-y divide-ink-100">
-                    {(Array.isArray(data.lines) ? data.lines : []).map((line, idx) => {
-                      const brand = line?.brand ?? "";
-                      const qty = line?.qty ?? 0;
-                      const currentId = line?.device_model_id ? Number(line.device_model_id) : null;
-                      const query = line?.model_query ?? "";
+                  <div className="overflow-visible">
+                    <div className="divide-y divide-ink-100">
+                      {(Array.isArray(data.lines) ? data.lines : []).map((line, idx) => {
+                        const brand = line?.brand ?? "";
+                        const qty = line?.qty ?? 0;
+                        const currentId = line?.device_model_id ? Number(line.device_model_id) : null;
+                        const query = line?.model_query ?? "";
 
-                      const errBrand = errors?.[`lines.${idx}.brand`];
-                      const errModel = errors?.[`lines.${idx}.device_model_id`];
-                      const errQty = errors?.[`lines.${idx}.qty`];
+                        const errBrand = errors?.[`lines.${idx}.brand`];
+                        const errModel = errors?.[`lines.${idx}.device_model_id`];
+                        const errQty = errors?.[`lines.${idx}.qty`];
 
-                      const modelsForBrand = deviceModels.filter((m) => {
-                        if (!brand) return false;
-                        return String(m.brand || "") === String(brand);
-                      });
+                        const modelsForBrand = deviceModels.filter((m) => {
+                          if (!brand) return false;
+                          return String(m.brand || "") === String(brand);
+                        });
 
-                      const filteredModels = (() => {
-                        const q = normalize(query);
-                        if (!q) return modelsForBrand.slice(0, 12);
+                        const filteredModels = (() => {
+                          const q = normalize(query);
+                          if (!q) return modelsForBrand.slice(0, 12);
 
-                        const starts = [];
-                        const contains = [];
+                          const starts = [];
+                          const contains = [];
 
-                        for (const m of modelsForBrand) {
-                          const nameN = normalize(`${m.name ?? ""} ${m.sku ?? ""} ${m.box_type?.code ?? ""}`);
-                          if (nameN.startsWith(q)) starts.push(m);
-                          else if (nameN.includes(q)) contains.push(m);
-                        }
+                          for (const m of modelsForBrand) {
+                            const nameN = normalize(`${m.name ?? ""} ${m.sku ?? ""} ${m.box_type?.code ?? ""}`);
+                            if (nameN.startsWith(q)) starts.push(m);
+                            else if (nameN.includes(q)) contains.push(m);
+                          }
 
-                        return [...starts, ...contains].slice(0, 12);
-                      })();
+                          return [...starts, ...contains].slice(0, 12);
+                        })();
 
-                      const selectedModel = currentId ? deviceModelsById.get(currentId) : null;
-                      const boxCode = selectedModel?.box_type?.code;
+                        const selectedModel = currentId ? deviceModelsById.get(currentId) : null;
+                        const boxCode = selectedModel?.box_type?.code;
 
-                      return (
-                        <div key={idx} className="px-4 py-3">
-                          <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-start gap-2">
-                            {/* Marca */}
-                            <div>
-                              <select
-                                value={brand}
-                                onChange={(e) => {
-                                  const nextBrand = e.target.value;
-                                  updateLine(idx, { brand: nextBrand, device_model_id: null, model_query: "" });
-                                }}
-                                className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
-                              >
-                                <option value="">Marca…</option>
-                                {brands.map((b) => (
-                                  <option key={b} value={b}>
-                                    {b}
-                                  </option>
-                                ))}
-                              </select>
-                              {errBrand ? (
-                                <div className="mt-1 text-[10px] font-extrabold text-red-600">{errBrand}</div>
-                              ) : null}
-                            </div>
-
-                            {/* Modelo autocomplete */}
-                            <div className="relative">
-                              <input
-                                value={currentId ? modelLabel(selectedModel) : query}
-                                onChange={(e) => updateLine(idx, { device_model_id: null, model_query: e.target.value })}
-                                placeholder={brand ? "Escribe para buscar modelo…" : "Selecciona marca primero…"}
-                                disabled={!brand}
-                                className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
-                              />
-
-                              <div className="mt-1 flex items-center justify-between gap-2">
-                                {boxCode ? (
-                                  <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100">
-                                    Caja: {boxCode}
-                                  </span>
-                                ) : <span />}
-
-                                {errModel ? (
-                                  <span className="text-[10px] font-extrabold text-red-600">{errModel}</span>
+                        return (
+                          <div key={idx} className="px-4 py-3">
+                            <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-start gap-2">
+                              {/* Marca */}
+                              <div>
+                                <select
+                                  value={brand}
+                                  onChange={(e) => {
+                                    const nextBrand = e.target.value;
+                                    updateLine(idx, { brand: nextBrand, device_model_id: null, model_query: "" });
+                                  }}
+                                  className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
+                                >
+                                  <option value="">Marca…</option>
+                                  {brands.map((b) => (
+                                    <option key={b} value={b}>
+                                      {b}
+                                    </option>
+                                  ))}
+                                </select>
+                                {errBrand ? (
+                                  <div className="mt-1 text-[10px] font-extrabold text-red-600">{errBrand}</div>
                                 ) : null}
                               </div>
 
-                              {brand && !currentId && filteredModels.length > 0 && (
-                                <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
-                                  {filteredModels.map((m) => (
-                                    <button
-                                      key={m.id}
-                                      type="button"
-                                      onClick={() => updateLine(idx, { device_model_id: Number(m.id), model_query: "" })}
-                                      className="block w-full px-3 py-2 text-left text-[13px] font-semibold text-ink-800 hover:bg-brand-50"
-                                      title={modelLabel(m)}
-                                    >
-                                      <div className="truncate">{modelLabel(m)}</div>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Cantidad */}
-                            <div className="text-right">
-                              <input
-                                type="number"
-                                min="0"
-                                value={qty}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  updateLine(idx, { qty: v === "" ? "" : Number(v) });
+                              {/* Modelo autocomplete */}
+                              <div
+                                className="relative"
+                                ref={(el) => {
+                                  if (el) modelRowRefs.current[idx] = el;
+                                  else delete modelRowRefs.current[idx];
                                 }}
-                                className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2 text-right"
-                              />
-                              {errQty ? (
-                                <div className="mt-1 text-[10px] font-extrabold text-red-600">{errQty}</div>
-                              ) : null}
-                            </div>
+                              >
+                                <input
+                                  value={currentId ? modelLabel(selectedModel) : query}
+                                  onChange={(e) => {
+                                    updateLine(idx, { device_model_id: null, model_query: e.target.value });
+                                    setOpenModelRowIdx(idx); // mantener abierto mientras escribe
+                                  }}
+                                  onFocus={() => {
+                                    if (brand) setOpenModelRowIdx(idx);
+                                  }}
+                                  placeholder={brand ? "Escribe para buscar modelo…" : "Selecciona marca primero…"}
+                                  disabled={!brand}
+                                  className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                                />
 
-                            {/* Caja (UI placeholder) */}
-                            <div className="flex items-center justify-center">
-                              <div className="inline-flex h-10 items-center rounded-xl border border-ink-200 bg-white p-0.5">
+                                {/* hint */}
+                                <div className="mt-1 flex items-center justify-between gap-2">
+                                  {boxCode ? (
+                                    <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100">
+                                      Caja: {boxCode}
+                                    </span>
+                                  ) : <span />}
+
+                                  {errModel ? (
+                                    <span className="text-[10px] font-extrabold text-red-600">{errModel}</span>
+                                  ) : null}
+                                </div>
+
+                                {/* Dropdown filtrado */}
+                                {brand && !currentId && openModelRowIdx === idx && filteredModels.length > 0 && (
+                                  <div className="absolute z-[60] mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
+                                    {filteredModels.map((m) => (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => {
+                                          updateLine(idx, { device_model_id: Number(m.id), model_query: "" });
+                                          setOpenModelRowIdx(null); // cerrar al seleccionar
+                                        }}
+                                        className="block w-full px-3 py-2 text-left text-[13px] font-semibold text-ink-800 hover:bg-brand-50"
+                                        title={modelLabel(m)}
+                                      >
+                                        <div className="truncate">{modelLabel(m)}</div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+
+                              {/* Cantidad */}
+                              <div className="text-right">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={qty}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    updateLine(idx, { qty: v === "" ? "" : Number(v) });
+                                  }}
+                                  className="h-10 w-full rounded-xl border border-ink-200 bg-white px-3 text-[13px] font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2 text-right"
+                                />
+                                {errQty ? (
+                                  <div className="mt-1 text-[10px] font-extrabold text-red-600">{errQty}</div>
+                                ) : null}
+                              </div>
+
+                              {/* Caja (UI placeholder) */}
+                              <div className="flex items-center justify-center">
+                                <div className="inline-flex h-10 items-center rounded-xl border border-ink-200 bg-white p-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateLine(idx, { box_condition: "new" })}
+                                    className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "new"
+                                      ? "bg-ink-900 text-white"
+                                      : "text-ink-700 hover:bg-ink-50"
+                                      }`}
+                                  >
+                                    Nueva
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateLine(idx, { box_condition: "reuse" })}
+                                    className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "reuse"
+                                      ? "bg-ink-900 text-white"
+                                      : "text-ink-700 hover:bg-ink-50"
+                                      }`}
+                                  >
+                                    Reutil.
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Eliminar */}
+                              <div className="flex items-center justify-end">
                                 <button
                                   type="button"
-                                  onClick={() => updateLine(idx, { box_condition: "new" })}
-                                  className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "new"
-                                    ? "bg-ink-900 text-white"
-                                    : "text-ink-700 hover:bg-ink-50"
-                                    }`}
+                                  onClick={() => removeLine(idx)}
+                                  className="inline-flex h-10 w-12 items-center justify-center rounded-xl border border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
+                                  title="Eliminar línea"
                                 >
-                                  Nueva
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => updateLine(idx, { box_condition: "reuse" })}
-                                  className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "reuse"
-                                    ? "bg-ink-900 text-white"
-                                    : "text-ink-700 hover:bg-ink-50"
-                                    }`}
-                                >
-                                  Reutil.
+                                  ✕
                                 </button>
                               </div>
                             </div>
-
-                            {/* Eliminar */}
-                            <div className="flex items-center justify-end">
-                              <button
-                                type="button"
-                                onClick={() => removeLine(idx)}
-                                className="inline-flex h-10 w-12 items-center justify-center rounded-xl border border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
-                                title="Eliminar línea"
-                              >
-                                ✕
-                              </button>
-                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
+
               )}
             </div>
 
             {/* Footer */}
-            <div className="border-t border-ink-100 px-5 py-4">
+            <div className="border-t border-ink-100 px-5 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-xs text-ink-500">
                   Cambios aquí afectan al cálculo (se sincroniza con mini/torre/portátil mientras el service sea legacy).
