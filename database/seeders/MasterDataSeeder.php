@@ -22,12 +22,12 @@ class MasterDataSeeder extends Seeder
         // PALLET TYPES
         // -------------------------
         DB::table('pallet_types')->upsert([
-            ['code' => 'mini_quarter', 'name' => 'Mini-quarter pallet', 'base_length_cm' => 120, 'base_width_cm' => 80,  'max_height_cm' => 110, 'max_weight_kg' => 300,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'quarter',      'name' => 'Quarter pallet',      'base_length_cm' => 120, 'base_width_cm' => 80,  'max_height_cm' => 110, 'max_weight_kg' => 300,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'half',         'name' => 'Half pallet',         'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 160, 'max_weight_kg' => 600,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'extra_light',  'name' => 'Extra light pallet',  'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 220, 'max_weight_kg' => 450,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'light',        'name' => 'Light pallet',        'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 220, 'max_weight_kg' => 750,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'full',         'name' => 'Full pallet',         'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 220, 'max_weight_kg' => 1200, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'mini_quarter', 'name' => '120×80 (110cm, 300kg)',  'base_length_cm' => 120, 'base_width_cm' => 80,  'max_height_cm' => 110, 'max_weight_kg' => 300,  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'quarter',      'name' => '120×80 (110cm, 300kg)',  'base_length_cm' => 120, 'base_width_cm' => 80,  'max_height_cm' => 110, 'max_weight_kg' => 300,  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'half',         'name' => '120×100 (160cm, 600kg)', 'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 160, 'max_weight_kg' => 600,  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'extra_light',  'name' => '120×100 (220cm, 450kg)', 'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 220, 'max_weight_kg' => 450,  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'light',        'name' => '120×100 (220cm, 750kg)', 'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 220, 'max_weight_kg' => 750,  'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'full',         'name' => '120×100 (220cm, 1200kg)', 'base_length_cm' => 120, 'base_width_cm' => 100, 'max_height_cm' => 220, 'max_weight_kg' => 1200, 'created_at' => now(), 'updated_at' => now()],
         ], ['code'], ['name', 'base_length_cm', 'base_width_cm', 'max_height_cm', 'max_weight_kg', 'updated_at']);
 
         $palletId = fn (string $code) => DB::table('pallet_types')->where('code', $code)->value('id');
@@ -223,6 +223,7 @@ class MasterDataSeeder extends Seeder
                 ],
                 [
                     'price_eur' => $r['price'],
+                    'carrier_rate_name' => $this->getPalletwaysRateName($r['pallet']),
                     'updated_at' => now(),
                     'created_at' => now(),
                 ]
@@ -358,5 +359,18 @@ class MasterDataSeeder extends Seeder
                 }
             }
         }
+    }
+
+    private function getPalletwaysRateName(string $palletCode): ?string
+    {
+        return match ($palletCode) {
+            'mini_quarter' => 'Mini-Quarter Pallet',
+            'quarter'      => 'Quarter Pallet',
+            'half'         => 'Half Pallet',
+            'extra_light'  => 'Extra Light Pallet',
+            'light'        => 'Light Pallet',
+            'full'         => 'Full Pallet',
+            default        => null,
+        };
     }
 }

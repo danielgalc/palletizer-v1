@@ -29,10 +29,6 @@ class PalletizerController extends Controller
             'tower'    => ['required', 'integer', 'min:0'],
             'laptop'   => ['required', 'integer', 'min:0'],
 
-            'pallet_mode' => ['required', 'in:auto,manual'],
-            'pallet_type_codes' => ['nullable', 'array'],
-            'pallet_type_codes.*' => ['string', 'exists:pallet_types,code'],
-
             'carrier_mode' => ['required', 'in:auto,manual'],
             'carrier_ids' => ['nullable', 'array'],
             'carrier_ids.*' => ['integer', 'exists:carriers,id'],
@@ -40,12 +36,6 @@ class PalletizerController extends Controller
             'allow_separators' => ['required', 'boolean'],
         ]);
 
-
-        if ($data['pallet_mode'] === 'manual' && empty($data['pallet_type_codes'])) {
-            return back()->withErrors([
-                'pallet_type_codes' => 'Selecciona al menos un tipo de pallet o usa modo Auto.',
-            ]);
-        }
 
         if (($data['carrier_mode'] ?? 'auto') === 'manual' && empty($data['carrier_ids'])) {
             return back()->withErrors([
@@ -80,14 +70,13 @@ class PalletizerController extends Controller
             'laptop'  => (int) $data['laptop'],
         ];
 
-        $allowedCodes = ($data['pallet_mode'] === 'manual') ? $data['pallet_type_codes'] : null;
         $allowSeparators = (bool) $data['allow_separators'];
         $carrierIds = ($data['carrier_mode'] === 'manual') ? $data['carrier_ids'] : null;
 
         $plan = $svc->calculateBestPlanAcrossCarriers(
             $zoneId,
             $items,
-            $allowedCodes,
+            null, // Siempre prueba todos los tipos de pallet disponibles
             $allowSeparators,
             $carrierIds
         );

@@ -144,6 +144,7 @@ class PalletizationService
                 'pallet_type_code' => $palletType->code,
                 'pallet_type_id' => $this->resolvePalletTypeId($palletType),
                 'pallet_type_name' => $palletType->name,
+                'carrier_rate_name' => $rate->carrier_rate_name ?? null,
                 'pallet_count' => (int) $sim['pallet_count'],
                 'price_per_pallet' => $pricePerPallet,
                 'total_price' => $totalPrice,
@@ -230,6 +231,7 @@ class PalletizationService
                     $mixCandidates[] = [
                         'pallet_type_code' => "{$typeA->code}+{$typeB->code}",
                         'pallet_type_name' => "{$simA['pallet_count']}×{$typeA->name} + {$simB['pallet_count']}×{$typeB->name}",
+                        'carrier_rate_name' => null,
                         'pallet_count' => (int) ($simA['pallet_count'] ?? 0) + (int) ($simB['pallet_count'] ?? 0),
                         'price_per_pallet' => null,
                         'total_price' => $totalPrice,

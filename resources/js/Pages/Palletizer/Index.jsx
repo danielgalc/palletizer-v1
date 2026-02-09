@@ -77,6 +77,24 @@ function pricePerPallet(plan) {
   return total / count;
 }
 
+/**
+ * Formatea el tipo de pallet mostrando el nombre comercial (si existe) + especificaciones técnicas.
+ * - Si hay carrier_rate_name: "Quarter Pallet (120×80, 110cm, 300kg)"
+ * - Si no hay carrier_rate_name: "120×80 (110cm, 300kg)"
+ */
+function formatPalletType(plan) {
+  if (!plan) return "—";
+  
+  const technical = plan.pallet_type_name || "—";
+  const commercial = plan.carrier_rate_name;
+  
+  if (commercial) {
+    return `${commercial} (${technical})`;
+  }
+  
+  return technical;
+}
+
 function getPalletCounts(p) {
   // Formato nuevo: p.boxes = {tower,laptop,mini_pc}
   if (p && typeof p === "object" && p.boxes && typeof p.boxes === "object") {
@@ -215,10 +233,6 @@ export default function Index({ result }) {
 
     allow_separators: true,
 
-    // Pallet types (tarifas)
-    pallet_mode: "auto",
-    pallet_type_codes: [],
-
     // Carriers
     carrier_mode: "auto", // auto | manual
     carrier_ids: [],
@@ -228,9 +242,6 @@ export default function Index({ result }) {
   const [loadingProvinces, setLoadingProvinces] = useState(true);
   const [provincesError, setProvincesError] = useState(null);
 
-  const [palletTypes, setPalletTypes] = useState([]);
-  const [loadingPalletTypes, setLoadingPalletTypes] = useState(true);
-  const [palletTypesError, setPalletTypesError] = useState(null);
 
   // Autocomplete zonas
   const [zoneQuery, setZoneQuery] = useState("");
@@ -539,9 +550,6 @@ export default function Index({ result }) {
         mini_pc: Number(data.mini_pc ?? 0),
         allow_separators: !!data.allow_separators,
 
-        pallet_mode: data.pallet_mode,
-        pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
-
         carrier_mode: data.carrier_mode,
         carrier_ids: Array.isArray(data.carrier_ids) ? data.carrier_ids : [],
       };
@@ -597,8 +605,6 @@ export default function Index({ result }) {
         laptop: Number(data.laptop ?? 0),
         mini_pc: Number(data.mini_pc ?? 0),
         allow_separators: !!data.allow_separators,
-        pallet_mode: data.pallet_mode,
-        pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
       };
 
       const res = await fetch("/api/export/best-plan-pdf", {
@@ -650,8 +656,6 @@ export default function Index({ result }) {
     }
   };
 
-  const manualOk = data.pallet_mode !== "manual" || data.pallet_type_codes.length > 0;
-
   const carrierOk =
     data.carrier_mode !== "manual" ||
     (!loadingCarriers &&
@@ -686,7 +690,6 @@ export default function Index({ result }) {
     !loadingCountries &&
     !countriesError &&
     countrySelected &&
-    manualOk &&
     destinationOk &&
     carrierOk;
 
@@ -783,7 +786,6 @@ export default function Index({ result }) {
     if (prev && destinationQuery && prev !== destinationQuery) {
       setData("carrier_mode", "auto");
       setData("carrier_ids", []);
-      setData("pallet_type_codes", []);
     }
 
     prevDestinationQueryRef.current = destinationQuery;
@@ -834,79 +836,6 @@ export default function Index({ result }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destinationQuery]);
 
-  // Pallet types (tarifas) dependientes de destino + carriers seleccionados
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!destinationQuery) {
-      setPalletTypes([]);
-      setLoadingPalletTypes(false);
-      setPalletTypesError(null);
-      return;
-    }
-
-    if (data.carrier_mode === "manual" && (!Array.isArray(data.carrier_ids) || data.carrier_ids.length === 0)) {
-      setPalletTypes([]);
-      setLoadingPalletTypes(false);
-      setPalletTypesError(null);
-      if (data.pallet_type_codes.length > 0) setData("pallet_type_codes", []);
-      return;
-    }
-
-    setLoadingPalletTypes(true);
-    setPalletTypesError(null);
-
-    const params = new URLSearchParams(destinationQuery);
-
-    if (data.carrier_mode === "manual") {
-      params.set("carrier_ids", data.carrier_ids.join(","));
-    }
-
-    fetch(`/api/pallet-types?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("No se pudieron cargar tipos de pallet");
-        return r.json();
-      })
-      .then((list) => {
-        if (cancelled) return;
-
-        const next = Array.isArray(list) ? list : [];
-        setPalletTypes(next);
-        setLoadingPalletTypes(false);
-
-        const validCodes = new Set(next.map((t) => t.code));
-
-        const cur = Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [];
-        const filtered = cur.filter((c) => validCodes.has(c));
-
-        if (data.pallet_mode !== "manual") {
-          const nextCodes = filtered.length > 0 ? filtered : next.map((t) => t.code);
-          if (JSON.stringify(nextCodes) !== JSON.stringify(cur)) setData("pallet_type_codes", nextCodes);
-        } else {
-          if (JSON.stringify(filtered) !== JSON.stringify(cur)) setData("pallet_type_codes", filtered);
-        }
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setLoadingPalletTypes(false);
-        setPalletTypesError(e.message || "Error cargando tipos de pallet");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destinationQuery, data.carrier_mode, JSON.stringify(data.carrier_ids)]);
-
-  // Si el usuario cambia de "Manual" a "Auto" en tarifas, y no hay nada seleccionado, seleccionamos todo.
-  useEffect(() => {
-    if (data.pallet_mode !== "manual") {
-      if (Array.isArray(palletTypes) && palletTypes.length > 0 && data.pallet_type_codes.length === 0) {
-        setData("pallet_type_codes", palletTypes.map((t) => t.code));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.pallet_mode, palletTypes.length]);
 
   const bestCarrierId = best?.carrier_id ?? null;
 
@@ -942,7 +871,6 @@ export default function Index({ result }) {
 
                   setData("carrier_mode", "auto");
                   setData("carrier_ids", []);
-                  setData("pallet_type_codes", []);
 
                   if (!cc) {
                     setData("province_id", null);
@@ -954,7 +882,6 @@ export default function Index({ result }) {
 
                     setData("carrier_mode", "auto");
                     setData("carrier_ids", []);
-                    setData("pallet_type_codes", []);
                   }
                 }}
                 className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
@@ -1008,7 +935,6 @@ export default function Index({ result }) {
                       setData("province_id", null);
 
                       setData("carrier_ids", []);
-                      setData("pallet_type_codes", []);
                     }}
                     onFocus={() => setIsOpen(true)}
                     onKeyDown={onKeyDown}
@@ -1036,7 +962,6 @@ export default function Index({ result }) {
                               selectProvince(p);
 
                               setData("carrier_ids", []);
-                              setData("pallet_type_codes", []);
                             }}
                             className={[
                               "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
@@ -1075,7 +1000,6 @@ export default function Index({ result }) {
                       setData("zone_id", null);
 
                       setData("carrier_ids", []);
-                      setData("pallet_type_codes", []);
                     }}
                     onFocus={() => setZoneOpen(true)}
                     onKeyDown={onZoneKeyDown}
@@ -1097,7 +1021,6 @@ export default function Index({ result }) {
                               selectZone(z);
 
                               setData("carrier_ids", []);
-                              setData("pallet_type_codes", []);
                             }}
                             className={[
                               "flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm",
@@ -1134,7 +1057,6 @@ export default function Index({ result }) {
                     onChange={() => {
                       setData("carrier_mode", "auto");
                       setData("carrier_ids", []);
-                      setData("pallet_type_codes", []);
                     }}
                     className="h-4 w-4 accent-brand-500"
                   />
@@ -1150,7 +1072,6 @@ export default function Index({ result }) {
                     onChange={() => {
                       setData("carrier_mode", "manual");
                       setData("carrier_ids", []);
-                      setData("pallet_type_codes", []);
                     }}
                     className="h-4 w-4 accent-brand-500"
                   />
@@ -1177,7 +1098,6 @@ export default function Index({ result }) {
                           type="button"
                           onClick={() => {
                             setData("carrier_ids", carriers.map((c) => c.id));
-                            setData("pallet_type_codes", []);
                           }}
                           className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
                         >
@@ -1187,7 +1107,6 @@ export default function Index({ result }) {
                           type="button"
                           onClick={() => {
                             setData("carrier_ids", []);
-                            setData("pallet_type_codes", []);
                           }}
                           className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
                         >
@@ -1208,7 +1127,6 @@ export default function Index({ result }) {
                                   : data.carrier_ids.filter((id) => id !== c.id);
 
                                 setData("carrier_ids", next);
-                                setData("pallet_type_codes", []);
                               }}
                               className="h-4 w-4 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
                             />
@@ -1225,103 +1143,6 @@ export default function Index({ result }) {
                       )}
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* Tipos de pallet (tarifas) */}
-            <div className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
-              <div className="text-sm font-extrabold text-ink-900">Tarifas (tipo de pallet)</div>
-
-              <div className="mt-3 flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-sm text-ink-800">
-                  <input
-                    type="radio"
-                    name="pallet_mode"
-                    value="auto"
-                    checked={data.pallet_mode === "auto"}
-                    onChange={() => setData("pallet_mode", "auto")}
-                    className="h-4 w-4 accent-brand-500"
-                  />
-                  Auto (recomendado)
-                </label>
-
-                <label className="flex items-center gap-2 text-sm text-ink-800">
-                  <input
-                    type="radio"
-                    name="pallet_mode"
-                    value="manual"
-                    checked={data.pallet_mode === "manual"}
-                    onChange={() => setData("pallet_mode", "manual")}
-                    className="h-4 w-4 accent-brand-500"
-                  />
-                  Manual (seleccionar)
-                </label>
-              </div>
-
-              {loadingPalletTypes ? (
-                <div className="mt-3 text-sm text-ink-500">Cargando tipos de pallet…</div>
-              ) : palletTypesError ? (
-                <div className="mt-3 text-sm font-semibold text-red-600">{palletTypesError}</div>
-              ) : data.carrier_mode === "manual" && (!Array.isArray(data.carrier_ids) || data.carrier_ids.length === 0) ? (
-                <div className="mt-3 text-sm text-ink-500">
-                  Selecciona primero al menos un transportista para ver tarifas aplicables.
-                </div>
-              ) : data.pallet_mode === "manual" ? (
-                <div className="mt-3 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setData("pallet_type_codes", palletTypes.map((t) => t.code))}
-                      className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
-                    >
-                      Seleccionar todos
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setData("pallet_type_codes", [])}
-                      className="rounded-xl border border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-800 hover:bg-ink-50"
-                    >
-                      Quitar todos
-                    </button>
-                  </div>
-
-                  <div className="grid gap-2">
-                    {palletTypes.map((t) => {
-                      const checked = data.pallet_type_codes.includes(t.code);
-                      return (
-                        <label key={t.code} className="flex items-center gap-2 text-sm text-ink-800">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              const next = e.target.checked
-                                ? [...data.pallet_type_codes, t.code]
-                                : data.pallet_type_codes.filter((c) => c !== t.code);
-                              setData("pallet_type_codes", next);
-                            }}
-                            className="h-4 w-4 rounded border-ink-300 text-brand-500 focus:ring-brand-500"
-                          />
-                          <span className="font-semibold">{t.name}</span>
-                          <span className="text-xs text-ink-500">({t.code})</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-
-                  {errors.pallet_type_codes && (
-                    <div className="text-xs font-semibold text-red-600">{errors.pallet_type_codes}</div>
-                  )}
-
-                  {data.pallet_type_codes.length === 0 && (
-                    <div className="text-xs font-semibold text-red-600">
-                      Selecciona al menos una tarifa o usa modo Auto.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="mt-3 text-sm text-ink-500">
-                  Se evaluarán automáticamente todas las tarifas disponibles (según destino y transportistas).
                 </div>
               )}
             </div>
@@ -1504,7 +1325,7 @@ export default function Index({ result }) {
                     )}
                   </div>
                   <div className="text-md text-ink-900">
-                    <b>Tarifa:</b> <i>{best.pallet_type_name}</i>
+                    <b>Tarifa:</b> <i>{formatPalletType(best)}</i>
                   </div>
                 </div>
 
@@ -1814,7 +1635,7 @@ export default function Index({ result }) {
                                 ) : null}
                               </td>
 
-                              <td className="py-2 pr-3 font-semibold">{a.pallet_type_name}</td>
+                              <td className="py-2 pr-3 font-semibold">{formatPalletType(a)}</td>
                               <td className="py-2 pr-3">{fmtNum(a.pallet_count ?? a.pallets_count)}</td>
                               <td className="py-2 pr-3">{fmtEUR(pricePerPallet(a))}</td>
                               <td className="py-2 pr-3">{fmtEUR(a.total_price)}</td>

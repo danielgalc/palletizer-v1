@@ -15,6 +15,7 @@ return new class extends Migration {
             $table->unsignedSmallInteger('min_pallets');
             $table->unsignedSmallInteger('max_pallets');
             $table->decimal('price_eur', 10, 2);
+            $table->string('carrier_rate_name')->nullable();
             $table->timestamps();
 
             $table->unique(
