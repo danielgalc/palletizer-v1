@@ -1454,7 +1454,7 @@ export default function Index({ result }) {
                 </div>
               )}
 
-              {/* ✅ DISTRIBUCIÓN POR PALLET (con altura/peso libre + “Ver capas” completo) */}
+              {/* DISTRIBUCIÓN POR PALLET (con altura/peso libre + “Ver capas” completo) */}
               {Array.isArray(best?.pallets) && best.pallets.length > 0 && (
                 <details className="rounded-xl border border-ink-100 p-4">
                   <summary className="cursor-pointer text-sm font-extrabold text-ink-900">
@@ -1674,7 +1674,7 @@ export default function Index({ result }) {
                 </details>
               )}
 
-              {/* ✅ ALTERNATIVAS (compactas + colapsables) */}
+              {/* ALTERNATIVAS (compactas + colapsables) */}
               {alternatives.length > 0 && (
                 <details className="rounded-2xl border border-ink-100 bg-white p-4" open>
                   <summary className="cursor-pointer text-sm font-extrabold text-ink-900">
