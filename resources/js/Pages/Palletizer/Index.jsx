@@ -77,20 +77,35 @@ function pricePerPallet(plan) {
   return total / count;
 }
 
-function splitTypeLabel(label) {
-  const s = String(label ?? "").trim();
-  if (!s) return { main: "—", detail: "" };
 
-  const i = s.indexOf("(");
-  if (i > 0) {
+function splitTypeLabel(typeName) {
+  const s = String(typeName ?? "").trim();
+  if (!s) return { short: "—", detail: "" };
+
+  // Caso típico: "120×100 cm (220cm altura, 750kg)"
+  const idx = s.indexOf("(");
+  if (idx > 0) {
     return {
-      main: s.slice(0, i).trim(),
-      detail: s.slice(i).trim(), // incluye "(...)"
+      short: s.slice(0, idx).trim(),
+      detail: s.slice(idx).trim(),
     };
   }
 
-  return { main: s, detail: "" };
+  // Caso mixto: "6× 120×100 (...) + 1× 120×100 (...)"
+  // Si es muy largo, lo dejamos todo en detail y sacamos un short resumido.
+  if (s.length > 52) {
+    return { short: s.slice(0, 52).trim() + "…", detail: s };
+  }
+
+  return { short: s, detail: "" };
 }
+
+function compactCarrierBadge(isOtherCarrier) {
+  return isOtherCarrier
+    ? "inline-flex items-center rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100"
+    : "inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100";
+}
+
 
 /**
  * Formatea el tipo de pallet con un formato limpio y no redundante.
@@ -105,47 +120,47 @@ function splitTypeLabel(label) {
  */
 function formatPalletType(plan) {
   if (!plan) return "—";
-  
+
   // CASO 1: Plan mixto (tiene objeto mix)
   if (plan.mix && typeof plan.mix === 'object') {
     const parts = [];
-    
+
     // Procesar tipo A
     if (plan.mix.a) {
       const a = plan.mix.a;
       const countA = a.pallet_count || 0;
       const nameA = a.carrier_rate_name || a.pallet_type_name || "—";
-      
+
       parts.push(`${countA}× ${nameA}`);
     }
-    
+
     // Procesar tipo B
     if (plan.mix.b) {
       const b = plan.mix.b;
       const countB = b.pallet_count || 0;
       const nameB = b.carrier_rate_name || b.pallet_type_name || "—";
-      
+
       parts.push(`${countB}× ${nameB}`);
     }
-    
+
     return parts.join(' + ');
   }
-  
+
   // CASO 2: Plan mono-tipo
   const technical = plan.pallet_type_name || "—";
   const commercial = plan.carrier_rate_name;
-  
+
   // Extraer dimensiones del formato técnico: "120×100 (220cm, 750kg)"
   // Para convertirlo a: "120×100 cm (220cm altura, 750kg)"
   const enhancedTech = technical.replace(
     /(\d+×\d+)\s*\((\d+)cm,\s*(\d+)kg\)/,
     '$1 cm ($2cm altura, $3kg)'
   );
-  
+
   if (commercial) {
     return `${commercial} — ${enhancedTech}`;
   }
-  
+
   return enhancedTech;
 }
 
@@ -298,7 +313,6 @@ export default function Index({ result }) {
   const [loadingProvinces, setLoadingProvinces] = useState(true);
   const [provincesError, setProvincesError] = useState(null);
 
-
   // Autocomplete zonas
   const [zoneQuery, setZoneQuery] = useState("");
   const [zoneOpen, setZoneOpen] = useState(false);
@@ -339,6 +353,13 @@ export default function Index({ result }) {
   const [carriers, setCarriers] = useState([]);
   const [loadingCarriers, setLoadingCarriers] = useState(false);
   const [carriersError, setCarriersError] = useState(null);
+
+  // Alternativas
+  const [openAltRows, setOpenAltRows] = useState(() => ({}));
+
+  const toggleAltRow = (key) => {
+    setOpenAltRows((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const fetchBoxTypes = async () => {
     setLoadingBoxTypes(true);
@@ -1653,92 +1674,159 @@ export default function Index({ result }) {
                 </details>
               )}
 
-              {/* ✅ ALTERNATIVAS cross-carrier */}
+              {/* ✅ ALTERNATIVAS (compactas + colapsables) */}
               {alternatives.length > 0 && (
-                <details className="rounded-2xl border border-ink-100 bg-white p-4">
-                  <summary className="cursor-pointer text-sm font-extrabold text-ink-900">Alternativas</summary>
+                <details className="rounded-2xl border border-ink-100 bg-white p-4" open>
+                  <summary className="cursor-pointer text-sm font-extrabold text-ink-900">
+                    Alternativas
+                    <span className="ml-2 text-xs font-semibold text-ink-500">
+                      ({alternatives.length})
+                    </span>
+                  </summary>
 
-<div className="mt-4 overflow-x-auto">
-  <table className="min-w-[760px] w-full table-fixed border-separate border-spacing-0">
-    <colgroup>
-      {showCarrierCol ? <col className="w-[210px]" /> : null}
-      <col className="w-auto" />
-      <col className="w-[90px]" />
-      <col className="w-[110px]" />
-      <col className="w-[110px]" />
-    </colgroup>
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-[860px] w-full border-separate border-spacing-0">
+                      <thead>
+                        <tr className="text-left text-xs text-ink-500">
+                          <th className="py-2 pr-3">Transportista</th>
+                          <th className="py-2 pr-3">Tipo</th>
+                          <th className="py-2 text-center">Pallets</th>
+                          <th className="py-2 text-center">€/pallet</th>
+                          <th className="py-2 text-center">Total</th>
+                        </tr>
+                      </thead>
 
-    <thead>
-      <tr className="text-left text-xs text-ink-500">
-        {showCarrierCol ? <th className="py-2 pr-3">Transportista</th> : null}
-        <th className="py-2 pr-3">Tipo</th>
-        <th className="py-2 pr-3">Pallets</th>
-        <th className="py-2 pr-3">€/pallet</th>
-        <th className="py-2 pr-3">Total</th>
-      </tr>
-    </thead>
+                      <tbody className="text-sm text-ink-800">
+                        {alternatives.map((a, idx) => {
+                          const key = `${a?.carrier_id ?? "c"}-${a?.pallet_type_code ?? a?.pallet_type_name ?? "t"}-${idx}`;
 
-    <tbody className="text-sm text-ink-800">
-      {alternatives.map((a, idx) => {
-        const { main, detail } = splitTypeLabel(a?.pallet_type_name);
+                          const altCarrierId = a?.carrier_id ?? null;
+                          const isOtherCarrier =
+                            bestCarrierId !== null &&
+                            altCarrierId !== null &&
+                            Number(altCarrierId) !== Number(bestCarrierId);
 
-        return (
-          <tr key={idx} className="border-t border-ink-100 align-top">
-            {showCarrierCol ? (
-              <td className="py-2 pr-3 align-top">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-ink-900">
-                    {a?.carrier_name ?? "—"}
+                          const carrierName = a?.carrier_name ?? "—";
+                          const carrierCode = a?.carrier_code ?? "";
+
+                          const { short: typeShort, detail: typeDetail } = splitTypeLabel(a?.pallet_type_name);
+
+                          const palletsCount = a?.pallet_count ?? a?.pallets_count;
+                          const pp = pricePerPallet(a);
+
+                          const isOpen = !!openAltRows[key];
+
+                          return (
+                            <React.Fragment key={key}>
+                              <tr className="border-t border-ink-100 align-top">
+                                {/* Transportista */}
+                                <td className="py-3 pr-3">
+                                  <div className="flex items-start gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold">{carrierName}</span>
+                                        <span className={compactCarrierBadge(isOtherCarrier)}>
+                                          {isOtherCarrier ? "Otro" : "Mismo"}
+                                        </span>
+                                      </div>
+
+                                      {/*{carrierCode ? (
+                                        <div className="mt-0.5 text-[11px] font-semibold text-ink-500">
+                                          {carrierCode}
+                                        </div>
+                                      ) : null}*/}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Tipo (compactado + tooltip) */}
+                                <td className="py-3 pr-3">
+                                  <div className="min-w-0">
+                                    <div
+                                      className="max-w-[520px] truncate font-semibold px-2 py-1 rounded text-ink-500 ring-1 ring-ink-100 text-xs"
+                                      title={String(a?.pallet_type_name ?? "")}
+                                    >
+                                      {typeShort} {typeDetail || "—"}
+                                    </div>
+
+                                    {/* Mini línea secundaria opcional (detalle corto) */}
+                      
+                                  </div>
+                                </td>
+
+                                {/* Pallets */}
+                                <td className="py-3 text-center font-semibold tabular-nums">
+                                  {fmtNum(palletsCount)}
+                                </td>
+
+                                {/* €/pallet */}
+                                <td className="py-3 text-center tabular-nums">
+                                  {fmtEUR(pp)}
+                                </td>
+
+                                {/* Total */}
+                                <td className="py-3 text-center font-extrabold tabular-nums">
+                                  {fmtEUR(a?.total_price)}
+                                </td>
+
+                                {/* Botón detalles */}
+                                {/*<td className="py-3 pr-0 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleAltRow(key)}
+                                    className="inline-flex items-center rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
+                                  >
+                                    {isOpen ? "Ocultar" : "Detalles"}
+                                  </button>
+                                </td>*/}
+                              </tr>
+
+                              {/* Fila colapsable con el texto completo sin romper tabla */}
+                              {isOpen && (
+                                <tr className="border-t border-ink-100">
+                                  <td colSpan={5} className="py-3">
+                                    <div className="rounded-xl bg-ink-50 p-3 ring-1 ring-ink-100">
+                                      <div className="text-xs font-extrabold text-ink-700">Tipo completo</div>
+                                      <div className="mt-1 text-xs text-ink-700">
+                                        <span className="font-semibold">Transportista:</span>{" "}
+                                        {carrierName}
+                                        {carrierCode ? (
+                                          <span className="text-ink-500"> ({carrierCode})</span>
+                                        ) : null}
+                                      </div>
+
+                                      <div className="mt-2 rounded-lg bg-white p-3 text-xs text-ink-800 ring-1 ring-ink-100">
+                                        {String(a?.pallet_type_name ?? "—")}
+                                      </div>
+
+                                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                        <span className="inline-flex items-center rounded-full bg-white px-2 py-1 font-extrabold text-ink-800 ring-1 ring-ink-100">
+                                          Pallets: {fmtNum(palletsCount)}
+                                        </span>
+                                        <span className="inline-flex items-center rounded-full bg-white px-2 py-1 font-extrabold text-ink-800 ring-1 ring-ink-100">
+                                          €/pallet: {fmtEUR(pp)}
+                                        </span>
+                                        <span className="inline-flex items-center rounded-full bg-white px-2 py-1 font-extrabold text-ink-800 ring-1 ring-ink-100">
+                                          Total: {fmtEUR(a?.total_price)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  {a?.carrier_code ? (
-                    <div className="mt-0.5 truncate text-[11px] font-semibold text-ink-500">
-                      {a.carrier_code}
-                    </div>
-                  ) : null}
-
-                  {/* Si tú ya pintas "Otro transportista", puedes mantener tu badge aquí */}
-                </div>
-              </td>
-            ) : null}
-
-            <td className="py-2 pr-3 align-top">
-              <div className="min-w-0">
-                <div className="font-semibold text-ink-900 leading-snug whitespace-normal break-words">
-                  {main}
-                </div>
-
-                {detail ? (
-                  <div className="mt-0.5 text-xs text-ink-500 leading-snug whitespace-normal break-words">
-                    {detail}
-                  </div>
-                ) : null}
-              </div>
-            </td>
-
-            <td className="py-2 pr-3 whitespace-nowrap">
-              {fmtNum(a?.pallet_count ?? a?.pallets_count)}
-            </td>
-
-            <td className="py-2 pr-3 whitespace-nowrap">
-              {fmtEUR(pricePerPallet(a))}
-            </td>
-
-            <td className="py-2 pr-3 whitespace-nowrap">
-              {fmtEUR(a?.total_price)}
-            </td>
-          </tr>
-        );
-      })}
-    </tbody>
-  </table>
-</div>
-
 
                   <div className="mt-3 text-xs text-ink-600">
                     Estas alternativas se eligen por cercanía al mejor global (aunque sean de otros transportistas).
                   </div>
                 </details>
               )}
+
             </div>
           ) : (
             <p className="mt-4 text-sm text-ink-500">Aún no has calculado nada. Envía el formulario.</p>
