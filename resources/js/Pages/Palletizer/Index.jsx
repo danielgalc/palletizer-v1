@@ -1752,7 +1752,7 @@ export default function Index({ result }) {
                                 {wLeft !== null && wLeft !== undefined ? (
                                   <>
                                     {hLeft !== null && hLeft !== undefined ? " · " : ""}
-                                    Peso libre: <b>{fmtNum(Number(wLeft ?? 0).toFixed(2))}</b> kg                                            
+                                    Peso libre: <b>{fmtNum(wLeft)}</b> kg
                                   </>
                                 ) : null}
                               </div>
@@ -1776,7 +1776,19 @@ export default function Index({ result }) {
 
                                   const derived = computeLayerHeightKg(layer, perType);
                                   const h = derived?.height_cm;
-                                  const kg = derived?.weight_kg;
+
+                                  // Peso exacto si viene del backend en gramos
+                                  const layerWeightG =
+                                    layer?.weight_g !== undefined && layer?.weight_g !== null
+                                      ? Number(layer.weight_g)
+                                      : (layer?.weight_kg !== undefined && layer?.weight_kg !== null
+                                        ? Math.round(Number(layer.weight_kg) * 1000)
+                                        : null);
+
+                                  // Fallback (si todavía no viene el peso desde backend)
+                                  const kgFallback = derived?.weight_kg;
+                                  const kgExact = layerWeightG !== null ? (layerWeightG / 1000) : kgFallback;
+
 
                                   // En formato nuevo, layer.count es “cajas del base”, en viejo se calcula con counts
                                   const baseCount =
@@ -1800,12 +1812,13 @@ export default function Index({ result }) {
                                             · altura <b>{fmtNum(h)}</b> cm
                                           </>
                                         ) : null}
-                                        {kg !== null && kg !== undefined ? (
+                                        {kgExact !== null && kgExact !== undefined ? (
                                           <>
                                             {" "}
-                                            · peso <b>{fmtNum(Number(kg ?? 0).toFixed(2))}</b> kg                                            
+                                            · peso <b>{fmtNum(kgExact.toFixed(3))}</b> kg
                                           </>
                                         ) : null}
+
                                         {needsSep ? " · separador" : ""}
                                         {slotsEmpty > 0 ? ` · huecos ${slotsEmpty}` : ""}
                                       </div>

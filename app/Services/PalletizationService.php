@@ -352,6 +352,8 @@ class PalletizationService
         $palletW = (int)$palletType->base_width_cm;
         $palletMaxH = (int)$palletType->max_height_cm;
         $palletMaxKg = (float)$palletType->max_weight_kg;
+        $palletMaxG = (int) round($palletMaxKg * 1000); // gramos
+
 
         // Info por tipo (cajas/capa, altura, peso)
         $info = [];
@@ -366,16 +368,20 @@ class PalletizationService
                 (int)$b->width_cm
             );
 
+            $unitKg = (float)($weightByCode[$code] ?? $b->weight_kg);
+            $unitG  = (int) round($unitKg * 1000);
+
             $info[$code] = [
                 'per_layer' => $perLayer,
                 'height_cm' => (int)$b->height_cm,
-                'weight_kg' => (float)($weightByCode[$code] ?? $b->weight_kg),
+                'weight_kg' => $unitKg,   // solo informativo (UI/metrics)
+                'weight_g'  => $unitG,    // el cálculo real va con esto
             ];
         }
 
         // Validación mínima
         foreach ($info as $code => $t) {
-            if ($t['per_layer'] <= 0 || $t['height_cm'] <= 0 || $t['weight_kg'] <= 0) {
+            if ($t['per_layer'] <= 0 || $t['height_cm'] <= 0 || ($t['weight_g'] ?? 0) <= 0) {
                 return [
                     'pallet_count' => 0,
                     'pallets' => [],
@@ -407,13 +413,15 @@ class PalletizationService
             $pallet = [
                 'layers' => [],
                 'height_cm' => 0,
-                'weight_kg' => 0,
+                'weight_g' => 0,   // cálculo exacto
+                'weight_kg' => 0,  // derivado (para UI legacy)
                 'boxes' => [
                     'tower' => 0,
                     'laptop' => 0,
                     'mini_pc' => 0,
                 ],
             ];
+
 
             while (true) {
                 $remainingH = $palletMaxH - $pallet['height_cm'];
@@ -434,13 +442,15 @@ class PalletizationService
 
                 $cap = $info[$chosen]['per_layer'];
                 $want = min($cap, $remaining[$chosen]);
-                $layerWeight = $want * $info[$chosen]['weight_kg'];
 
-                $remainingKg = $palletMaxKg - $pallet['weight_kg'];
-                if ($layerWeight > $remainingKg) {
-                    $want = (int) floor($remainingKg / max($info[$chosen]['weight_kg'], 0.00001));
-                    $want = max(0, min($want, $cap, $remaining[$chosen]));
-                    $layerWeight = $want * $info[$chosen]['weight_kg'];
+                $unitG = (int) ($info[$chosen]['weight_g'] ?? 0);
+                $layerWeightG = $want * $unitG;
+
+                $remainingG = $palletMaxG - (int)$pallet['weight_g'];
+                if ($layerWeightG > $remainingG) {
+                    $can = $unitG > 0 ? intdiv($remainingG, $unitG) : 0;
+                    $want = max(0, min($can, $cap, $remaining[$chosen]));
+                    $layerWeightG = $want * $unitG;
                 }
 
                 if ($want <= 0) break;
@@ -464,13 +474,15 @@ class PalletizationService
                         if ($info[$t2]['height_cm'] > $info[$chosen]['height_cm']) continue;
 
                         $fill = min($slots, $remaining[$t2]);
-                        $fillWeight = $fill * $info[$t2]['weight_kg'];
 
-                        $remainingKg2 = $palletMaxKg - ($pallet['weight_kg'] + $layerWeight);
-                        if ($fillWeight > $remainingKg2) {
-                            $fill = (int) floor($remainingKg2 / max($info[$t2]['weight_kg'], 0.00001));
-                            $fill = max(0, min($fill, $slots, $remaining[$t2]));
-                            $fillWeight = $fill * $info[$t2]['weight_kg'];
+                        $unitG2 = (int) ($info[$t2]['weight_g'] ?? 0);
+                        $fillWeightG = $fill * $unitG2;
+
+                        $remainingG2 = $palletMaxG - ((int)$pallet['weight_g'] + (int)$layerWeightG);
+                        if ($fillWeightG > $remainingG2) {
+                            $can2 = $unitG2 > 0 ? intdiv($remainingG2, $unitG2) : 0;
+                            $fill = max(0, min($can2, $slots, $remaining[$t2]));
+                            $fillWeightG = $fill * $unitG2;
                         }
 
                         if ($fill <= 0) continue;
@@ -485,7 +497,7 @@ class PalletizationService
                         $remaining[$t2] -= $fill;
                         $pallet['boxes'][$t2] += $fill;
                         $slots -= $fill;
-                        $layerWeight += $fillWeight;
+                        $layerWeightG += $fillWeightG;
 
                         if ($slots <= 0) break;
                     }
@@ -497,10 +509,16 @@ class PalletizationService
 
                 $pallet['layers'][] = $layer;
                 $pallet['height_cm'] += $info[$chosen]['height_cm'];
-                $pallet['weight_kg'] += $layerWeight;
+                $pallet['weight_g'] += (int)$layerWeightG;
+
+                $layer['weight_g'] = (int) $layerWeightG;
+                $layer['weight_kg'] = round(((int)$layerWeightG) / 1000, 3);
+
+                // derivado “bonito” (exacto a gramos)
+                $pallet['weight_kg'] = round(((int)$pallet['weight_g']) / 1000, 3);
 
                 if ($pallet['height_cm'] >= $palletMaxH) break;
-                if ($pallet['weight_kg'] >= $palletMaxKg) break;
+                if ($pallet['weight_g'] >= $palletMaxG) break;
                 if (($remaining['tower'] + $remaining['laptop'] + $remaining['mini_pc']) <= 0) break;
             }
 
@@ -546,6 +564,8 @@ class PalletizationService
                 'W_cm' => $palletW,
                 'H_cm' => $palletMaxH,
                 'max_kg' => $palletMaxKg,
+                'max_weight_g' => $palletMaxG,
+                'weight_g' => $info['tower']['weight_g'] ?? 0,
             ],
             'per_type' => [
                 'tower' => [
