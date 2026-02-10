@@ -1752,7 +1752,7 @@ export default function Index({ result }) {
                                 {wLeft !== null && wLeft !== undefined ? (
                                   <>
                                     {hLeft !== null && hLeft !== undefined ? " · " : ""}
-                                    Peso libre: <b>{fmtNum(wLeft)}</b> kg
+                                    Peso libre: <b>{fmtNum(Number(wLeft ?? 0).toFixed(2))}</b> kg                                            
                                   </>
                                 ) : null}
                               </div>
@@ -1803,7 +1803,7 @@ export default function Index({ result }) {
                                         {kg !== null && kg !== undefined ? (
                                           <>
                                             {" "}
-                                            · peso <b>{fmtNum(kg)}</b> kg
+                                            · peso <b>{fmtNum(Number(kg ?? 0).toFixed(2))}</b> kg                                            
                                           </>
                                         ) : null}
                                         {needsSep ? " · separador" : ""}

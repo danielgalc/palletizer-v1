@@ -163,11 +163,11 @@ class PalletizationService
         // ==========================================
         // Ordenamos mono por total para sacar mejores N
         $monoCandidates = $candidates;
-        usort($monoCandidates, fn ($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
+        usort($monoCandidates, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
 
         // Cogemos códigos de los mejores N tipos únicos para probar mezcla
         $mixTypeCodes = array_slice(
-            array_unique(array_map(fn ($c) => $c['pallet_type_code'], $monoCandidates)),
+            array_unique(array_map(fn($c) => $c['pallet_type_code'], $monoCandidates)),
             0,
             $maxTypesForMixing
         );
@@ -260,7 +260,7 @@ class PalletizationService
         // ==========================================
         $all = array_merge($candidates, $mixCandidates);
 
-        usort($all, fn ($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
+        usort($all, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
 
         $best = $all[0];
         $alternatives = array_slice($all, 1, 5);
@@ -297,6 +297,57 @@ class PalletizationService
             'mini_pc' => (int)($items['mini_pc'] ?? 0),
         ];
 
+        // Si vienen lines, calculamos el peso por tipo a partir de device_models.weight_kg (fallback a box_types.weight_kg)
+        $weightByCode = [];
+
+        if (isset($items['lines']) && is_array($items['lines']) && count($items['lines']) > 0) {
+            $modelQty = [];
+            foreach ($items['lines'] as $line) {
+                $id = (int) ($line['device_model_id'] ?? 0);
+                $qty = (int) ($line['qty'] ?? 0);
+                if ($id > 0 && $qty > 0) {
+                    $modelQty[$id] = ($modelQty[$id] ?? 0) + $qty;
+                }
+            }
+
+            if (!empty($modelQty)) {
+                $rows = DB::table('device_models as dm')
+                    ->join('box_types as bt', 'bt.id', '=', 'dm.box_type_id')
+                    ->whereIn('dm.id', array_keys($modelQty))
+                    ->select([
+                        'dm.id',
+                        'dm.weight_kg as model_weight_kg',
+                        'bt.code as box_code',
+                        'bt.weight_kg as box_weight_kg',
+                    ])
+                    ->get();
+
+                $sumW = [];   // box_code => sum(qty * weight)
+                $sumQ = [];   // box_code => sum(qty)
+
+                foreach ($rows as $r) {
+                    $id = (int) $r->id;
+                    $code = (string) ($r->box_code ?? '');
+                    if ($code === '') continue;
+
+                    $qty = (int) ($modelQty[$id] ?? 0);
+                    if ($qty <= 0) continue;
+
+                    $w = $r->model_weight_kg !== null ? (float) $r->model_weight_kg : (float) $r->box_weight_kg;
+                    if ($w <= 0) continue;
+
+                    $sumW[$code] = ($sumW[$code] ?? 0) + ($qty * $w);
+                    $sumQ[$code] = ($sumQ[$code] ?? 0) + $qty;
+                }
+
+                foreach ($sumQ as $code => $q) {
+                    if ($q > 0 && isset($sumW[$code])) {
+                        $weightByCode[$code] = $sumW[$code] / $q; // peso medio por unidad para ese box_code
+                    }
+                }
+            }
+        }
+
         $palletL = (int)$palletType->base_length_cm;
         $palletW = (int)$palletType->base_width_cm;
         $palletMaxH = (int)$palletType->max_height_cm;
@@ -318,7 +369,7 @@ class PalletizationService
             $info[$code] = [
                 'per_layer' => $perLayer,
                 'height_cm' => (int)$b->height_cm,
-                'weight_kg' => (float)$b->weight_kg,
+                'weight_kg' => (float)($weightByCode[$code] ?? $b->weight_kg),
             ];
         }
 
@@ -606,7 +657,7 @@ class PalletizationService
 
         // Si el usuario ha seleccionado carriers en UI, calculamos SOLO con esos.
         if (is_array($carrierIds) && count($carrierIds) > 0) {
-            $ids = array_values(array_unique(array_filter(array_map('intval', $carrierIds), fn ($v) => $v > 0)));
+            $ids = array_values(array_unique(array_filter(array_map('intval', $carrierIds), fn($v) => $v > 0)));
             $carrierRows = $carrierRows->whereIn('id', $ids)->values();
         }
 

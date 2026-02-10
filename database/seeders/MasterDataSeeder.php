@@ -60,7 +60,7 @@ class MasterDataSeeder extends Seeder
                 'name' => 'OptiPlex 7080 Tower',
                 'sku' => 'DEL-OP7080T',
                 'box_type_id' => $boxTypeId('tower'),
-                'weight_kg' => 10.80,
+                'weight_kg' => 10.13,
                 'is_active' => 1,
                 'created_at' => now(),
                 'updated_at' => now(),

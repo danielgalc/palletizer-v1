@@ -40,6 +40,20 @@ class PalletizerController extends Controller
             'allow_separators' => ['required', 'boolean'],
         ]);
 
+        if (!empty($data['lines']) && is_array($data['lines'])) {
+            $any = false;
+            foreach ($data['lines'] as $line) {
+                if ((int)($line['qty'] ?? 0) > 0) {
+                    $any = true;
+                    break;
+                }
+            }
+            if (!$any) {
+                // Si lines viene pero está vacío en la práctica, lo quitamos para no hacer queries inútiles
+                unset($data['lines']);
+            }
+        }
+
 
         if (($data['carrier_mode'] ?? 'auto') === 'manual' && empty($data['carrier_ids'])) {
             return back()->withErrors([
@@ -68,7 +82,7 @@ class PalletizerController extends Controller
             $destinationLabel = $zone->name;
         }
 
-         // ------------------------------------------------------------
+        // ------------------------------------------------------------
         // NUEVO: Si llegan líneas {device_model_id, qty}, convertir a items legacy
         // (Esto mantiene PalletizationService sin cambios mientras migramos)
         // ------------------------------------------------------------
@@ -163,6 +177,12 @@ class PalletizerController extends Controller
             'tower'   => (int) $data['tower'],
             'laptop'  => (int) $data['laptop'],
         ];
+
+        // Pasamos también lines al service (si vienen) para que pueda usar pesos de device_models
+        if (!empty($data['lines']) && is_array($data['lines'])) {
+            $items['lines'] = $data['lines'];
+        }
+
 
         $allowSeparators = (bool) $data['allow_separators'];
         $carrierIds = ($data['carrier_mode'] === 'manual') ? $data['carrier_ids'] : null;
