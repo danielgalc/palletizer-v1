@@ -219,13 +219,22 @@ function getLayerCounts(layer) {
 }
 
 function computeLayerHeightKg(layer, perType) {
-  // Si backend ya lo trae, úsalo
+  // Si backend ya lo trae, úsalo (priorizando weight_g)
   const h = layer?.height_cm;
+
+  const g = layer?.weight_g;
   const kg = layer?.weight_kg;
-  if (h !== undefined || kg !== undefined) {
+
+  if (h !== undefined || g !== undefined || kg !== undefined) {
+    const weightFromG =
+      g !== undefined && g !== null && Number.isFinite(Number(g))
+        ? Number(g) / 1000
+        : null;
+
     return {
       height_cm: h !== undefined ? Number(h) : null,
-      weight_kg: kg !== undefined ? Number(kg) : null,
+      // Si existe weight_g, manda; si no, usa weight_kg
+      weight_kg: weightFromG !== null ? weightFromG : (kg !== undefined ? Number(kg) : null),
     };
   }
 
@@ -241,12 +250,21 @@ function computeLayerHeightKg(layer, perType) {
   let weight_kg = 0;
   let ok = false;
   for (const k of ["tower", "laptop", "mini_pc"]) {
-    const w = perType?.[k]?.weight_kg;
-    if (w !== undefined) {
+    const wg = perType?.[k]?.weight_g;
+    const wk = perType?.[k]?.weight_kg;
+
+    if (wg !== undefined && wg !== null) {
       ok = true;
-      weight_kg += Number(w) * Number(counts[k] ?? 0);
+      weight_kg += (Number(wg) / 1000) * Number(counts[k] ?? 0);
+      continue;
+    }
+
+    if (wk !== undefined && wk !== null) {
+      ok = true;
+      weight_kg += Number(wk) * Number(counts[k] ?? 0);
     }
   }
+
   if (!ok) weight_kg = null;
 
   return { height_cm, weight_kg };
