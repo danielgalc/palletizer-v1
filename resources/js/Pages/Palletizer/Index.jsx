@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useForm } from "@inertiajs/react";
 import AppLayout from "@/Layouts/AppLayout";
 
@@ -420,9 +421,25 @@ export default function Index({ result }) {
   // --- Model modal ---
   const [openModelRowIdx, setOpenModelRowIdx] = useState(null);
   const modelRowRefs = useRef({});
+  const modelDropdownRef = useRef(null);
+  const modelsModalBodyRef = useRef(null);
+
   const [modelsModalOpen, setModelsModalOpen] = useState(false);
+
+  // Dropdown (portal) del modelo: se pinta fuera del overflow del modal
+  const [modelDropdown, setModelDropdown] = useState({
+    idx: null,
+    rect: null, // { left, top, width, height }
+    items: [],
+    open: false,
+  });
+
   const openModelsModal = () => setModelsModalOpen(true);
-  const closeModelsModal = () => setModelsModalOpen(false);
+  const closeModelsModal = () => {
+    setModelsModalOpen(false);
+    setOpenModelRowIdx(null);
+    setModelDropdown((s) => ({ ...s, open: false, items: [], idx: null, rect: null }));
+  };
 
 
   // Exportacion de docs
@@ -706,18 +723,125 @@ export default function Index({ result }) {
       const el = modelRowRefs.current[openModelRowIdx];
       if (!el) {
         setOpenModelRowIdx(null);
+        setModelDropdown((s) => ({ ...s, open: false }));
         return;
       }
 
-      // Si el click NO está dentro del contenedor de esa fila (input+dropdown), cerramos
-      if (!el.contains(e.target)) {
+      const ddEl = modelDropdownRef.current;
+
+      const clickInsideRow = el.contains(e.target);
+      const clickInsideDropdown = ddEl ? ddEl.contains(e.target) : false;
+
+      // Si el click NO está dentro de la fila ni del dropdown (portal), cerramos
+      if (!clickInsideRow && !clickInsideDropdown) {
         setOpenModelRowIdx(null);
+        setModelDropdown((s) => ({ ...s, open: false }));
       }
     };
 
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [modelsModalOpen, openModelRowIdx]);
+
+  // Cerrar dropdown de modelos con Escape
+  useEffect(() => {
+    if (!modelsModalOpen) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setOpenModelRowIdx(null);
+        setModelDropdown((s) => ({ ...s, open: false }));
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [modelsModalOpen]);
+
+  // Derivar items del dropdown para la fila abierta y decidir si se abre
+  const openLine =
+    openModelRowIdx !== null && Array.isArray(data.lines) ? data.lines[openModelRowIdx] : null;
+
+  const openBrand = openLine?.brand ? String(openLine.brand) : "";
+  const openQuery = openLine?.model_query ? String(openLine.model_query) : "";
+  const openModelId = openLine?.device_model_id ? Number(openLine.device_model_id) : null;
+
+  const modelsForOpenBrand = useMemo(() => {
+    if (!openBrand) return [];
+    return deviceModels.filter((m) => String(m.brand || "") === openBrand);
+  }, [deviceModels, openBrand]);
+
+  const filteredModelsForOpenRow = useMemo(() => {
+    if (!openBrand || openModelId) return [];
+    const q = normalize(openQuery);
+    if (!q) return modelsForOpenBrand.slice(0, 12);
+
+    const starts = [];
+    const contains = [];
+    for (const m of modelsForOpenBrand) {
+      const nameN = normalize(`${m.name ?? ""} ${m.sku ?? ""} ${m.box_type?.code ?? ""}`);
+      if (nameN.startsWith(q)) starts.push(m);
+      else if (nameN.includes(q)) contains.push(m);
+    }
+    return [...starts, ...contains].slice(0, 12);
+  }, [openBrand, openModelId, openQuery, modelsForOpenBrand]);
+
+  // Actualizar items y estado abierto/cerrado del portal
+  useEffect(() => {
+    if (!modelsModalOpen) return;
+
+    // Si no hay fila abierta o no hay items, cerramos
+    if (openModelRowIdx === null || !openBrand || openModelId || filteredModelsForOpenRow.length === 0) {
+      setModelDropdown((s) => ({ ...s, open: false, items: [] }));
+      return;
+    }
+
+    setModelDropdown((s) => ({
+      ...s,
+      idx: openModelRowIdx,
+      items: filteredModelsForOpenRow,
+      open: true,
+    }));
+  }, [modelsModalOpen, openModelRowIdx, openBrand, openModelId, filteredModelsForOpenRow]);
+
+  // Posicionar el dropdown (portal) debajo del input del modelo
+  useEffect(() => {
+    if (!modelsModalOpen) return;
+
+    const updatePos = () => {
+      if (openModelRowIdx === null) {
+        setModelDropdown((s) => ({ ...s, rect: null }));
+        return;
+      }
+
+      const rowEl = modelRowRefs.current[openModelRowIdx];
+      const inputEl = rowEl ? rowEl.querySelector("input") : null;
+      if (!inputEl) {
+        setModelDropdown((s) => ({ ...s, rect: null }));
+        return;
+      }
+
+      const r = inputEl.getBoundingClientRect();
+      setModelDropdown((s) => ({
+        ...s,
+        rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+      }));
+    };
+
+    updatePos();
+
+    const bodyEl = modelsModalBodyRef.current;
+    window.addEventListener("resize", updatePos);
+    window.addEventListener("scroll", updatePos, true);
+    if (bodyEl) bodyEl.addEventListener("scroll", updatePos, { passive: true });
+
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+      if (bodyEl) bodyEl.removeEventListener("scroll", updatePos);
+    };
+  }, [modelsModalOpen, openModelRowIdx]);
+
 
 
   // Modelos useEffect
@@ -2193,7 +2317,7 @@ export default function Index({ result }) {
               </button>
             </div>
 
-            <div className="max-h-[70vh] overflow-auto p-5">
+            <div ref={modelsModalBodyRef} className="max-h-[70vh] overflow-auto p-5">
               {loadingBoxTypes ? (
                 <div className="text-sm text-ink-500">Cargando…</div>
               ) : boxTypesError ? (
@@ -2426,25 +2550,7 @@ export default function Index({ result }) {
                                   ) : null}
                                 </div>
 
-                                {/* Dropdown filtrado */}
-                                {brand && !currentId && openModelRowIdx === idx && filteredModels.length > 0 && (
-                                  <div className="absolute z-[60] mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
-                                    {filteredModels.map((m) => (
-                                      <button
-                                        key={m.id}
-                                        type="button"
-                                        onClick={() => {
-                                          updateLine(idx, { device_model_id: Number(m.id), model_query: "" });
-                                          setOpenModelRowIdx(null); // cerrar al seleccionar
-                                        }}
-                                        className="block w-full px-3 py-2 text-left text-[13px] font-semibold text-ink-800 hover:bg-brand-50"
-                                        title={modelLabel(m)}
-                                      >
-                                        <div className="truncate">{modelLabel(m)}</div>
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
+                                {/* Dropdown filtrado (portal) */}
                               </div>
 
 
@@ -2509,7 +2615,6 @@ export default function Index({ result }) {
                     </div>
                   </div>
                 </div>
-
               )}
             </div>
 
@@ -2535,7 +2640,42 @@ export default function Index({ result }) {
             </div>
           </div>
         </div>
-      )}
+       )} {/* Dropdown de modelos (portal) */}
+          {modelDropdown.open &&
+          modelDropdown.rect &&
+          Array.isArray(modelDropdown.items) &&
+          modelDropdown.items.length > 0
+            ? createPortal(
+                <div
+                  ref={modelDropdownRef}
+                  style={{
+                    position: "fixed",
+                    left: modelDropdown.rect.left,
+                    top: modelDropdown.rect.top + modelDropdown.rect.height + 8,
+                    width: modelDropdown.rect.width,
+                    zIndex: 9999,
+                  }}
+                  className="max-h-64 overflow-auto rounded-xl border border-ink-100 bg-white shadow-soft"
+                >
+                  {modelDropdown.items.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        updateLine(modelDropdown.idx, { device_model_id: Number(m.id), model_query: "" });
+                        setOpenModelRowIdx(null);
+                        setModelDropdown((s) => ({ ...s, open: false }));
+                      }}
+                      className="block w-full px-3 py-2 text-left text-[13px] font-semibold text-ink-800 hover:bg-brand-50"
+                      title={modelLabel(m)}
+                    >
+                      <div className="truncate">{modelLabel(m)}</div>
+                    </button>
+                  ))}
+                </div>,
+                document.body
+              )
+            : null}
     </AppLayout>
   );
 }
