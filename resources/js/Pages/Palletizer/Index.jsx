@@ -286,20 +286,39 @@ function computeRemainingCapacity(p, palletMeta) {
 
   // 2) Si no lo trae, intenta derivarlo con palletMeta + p.height_cm/p.weight_kg
   const Hmax = palletMeta?.H_cm ?? palletMeta?.H ?? palletMeta?.max_height_cm;
+
   const KgMax = palletMeta?.max_kg ?? palletMeta?.kg ?? palletMeta?.max_weight_kg;
+  // NUEVO (exacto): gramos
+  const Gmax = palletMeta?.max_weight_g ?? palletMeta?.maxWeightG ?? null;
 
   const usedH = p?.height_cm;
   const usedKg = p?.weight_kg;
+  // NUEVO (exacto): gramos usados del pallet
+  const usedG = p?.weight_g ?? p?.weightG ?? null;
+
 
   if (Hmax !== undefined && usedH !== undefined) {
     const height_cm_left = Number(Hmax) - Number(usedH);
-    const weight_kg_left =
-      KgMax !== undefined && usedKg !== undefined ? Number(KgMax) - Number(usedKg) : null;
+    let weight_g_left = null;
+    let weight_kg_left = null;
+
+    // 1) Si tenemos gramos, usar eso (exacto)
+    if (Gmax !== null && usedG !== null && Gmax !== undefined && usedG !== undefined) {
+      const gLeft = Number(Gmax) - Number(usedG);
+      if (Number.isFinite(gLeft)) {
+        weight_g_left = Math.max(0, Math.round(gLeft)); // entero
+        weight_kg_left = weight_g_left / 1000;
+      }
+    } else if (KgMax !== undefined && usedKg !== undefined) {
+      // 2) Fallback legacy (float)
+      const wLeft = Number(KgMax) - Number(usedKg);
+      weight_kg_left = Number.isFinite(wLeft) ? Math.max(0, wLeft) : null;
+    }
 
     return {
-      height_cm_left: Number.isFinite(height_cm_left) ? Math.max(0, height_cm_left) : null,
-      weight_kg_left:
-        weight_kg_left !== null && Number.isFinite(weight_kg_left) ? Math.max(0, weight_kg_left) : null,
+      height_cm_left: Number.isFinite(Number(Hmax) - Number(usedH)) ? Math.max(0, Number(Hmax) - Number(usedH)) : null,
+      weight_g_left,
+      weight_kg_left,
     };
   }
 
@@ -1770,7 +1789,14 @@ export default function Index({ result }) {
                                 {wLeft !== null && wLeft !== undefined ? (
                                   <>
                                     {hLeft !== null && hLeft !== undefined ? " · " : ""}
-                                    Peso libre: <b>{fmtNum(wLeft)}</b> kg
+                                    Peso libre:{" "}
+                                    <b>
+                                      {remaining?.weight_g_left !== null && remaining?.weight_g_left !== undefined
+                                        ? (Number(remaining.weight_g_left) / 1000).toFixed(3).replace(/\.?0+$/, "")
+                                        : fmtNum(wLeft)}
+                                    </b>{" "}
+                                    kg
+
                                   </>
                                 ) : null}
                               </div>
