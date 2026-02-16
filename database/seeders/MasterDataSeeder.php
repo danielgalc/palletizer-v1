@@ -67,6 +67,84 @@ class MasterDataSeeder extends Seeder
             ],
         ], ['sku'], ['brand', 'name', 'box_type_id', 'weight_kg', 'is_active', 'updated_at']);
 
+                // -------------------------
+        // BOX PROVIDERS + BOX VARIANTS + STOCK (demo)
+        // -------------------------
+        DB::table('box_providers')->upsert([
+            ['name' => 'Electronic Bazaar', 'provider_type' => 'reused_source', 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'Ledmax',            'provider_type' => 'reused_source', 'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'Proveedor Cajas A', 'provider_type' => 'new_supplier',  'created_at' => now(), 'updated_at' => now()],
+            ['name' => 'Proveedor Cajas B', 'provider_type' => 'new_supplier',  'created_at' => now(), 'updated_at' => now()],
+        ], ['name'], ['provider_type', 'updated_at']);
+
+        $providerId = fn (string $name) => DB::table('box_providers')->where('name', $name)->value('id');
+
+        $variants = [
+            // Reutilizadas (proveedores de equipos)
+            ['kind' => 'laptop',  'condition' => 'reused', 'provider' => 'Electronic Bazaar', 'length_cm' => 42, 'width_cm' => 32, 'height_cm' => 12, 'weight_kg' => 0.400, 'unit_cost_eur' => 0],
+            ['kind' => 'tower',   'condition' => 'reused', 'provider' => 'Electronic Bazaar', 'length_cm' => 55, 'width_cm' => 30, 'height_cm' => 45, 'weight_kg' => 0.800, 'unit_cost_eur' => 0],
+            ['kind' => 'mini_pc', 'condition' => 'reused', 'provider' => 'Electronic Bazaar', 'length_cm' => 30, 'width_cm' => 25, 'height_cm' => 12, 'weight_kg' => 0.250, 'unit_cost_eur' => 0],
+
+            ['kind' => 'laptop',  'condition' => 'reused', 'provider' => 'Ledmax', 'length_cm' => 40, 'width_cm' => 30, 'height_cm' => 10, 'weight_kg' => 0.350, 'unit_cost_eur' => 0],
+            ['kind' => 'tower',   'condition' => 'reused', 'provider' => 'Ledmax', 'length_cm' => 52, 'width_cm' => 28, 'height_cm' => 42, 'weight_kg' => 0.750, 'unit_cost_eur' => 0],
+            ['kind' => 'mini_pc', 'condition' => 'reused', 'provider' => 'Ledmax', 'length_cm' => 28, 'width_cm' => 24, 'height_cm' => 11, 'weight_kg' => 0.220, 'unit_cost_eur' => 0],
+
+            // Nuevas (proveedores de cajas)
+            ['kind' => 'laptop',  'condition' => 'new', 'provider' => 'ByteBox Solutions', 'length_cm' => 41, 'width_cm' => 31, 'height_cm' => 11, 'weight_kg' => 0.380, 'unit_cost_eur' => 1.2500],
+            ['kind' => 'tower',   'condition' => 'new', 'provider' => 'ByteBox Solutions', 'length_cm' => 54, 'width_cm' => 29, 'height_cm' => 44, 'weight_kg' => 0.780, 'unit_cost_eur' => 2.7000],
+            ['kind' => 'mini_pc', 'condition' => 'new', 'provider' => 'ByteBox Solutions', 'length_cm' => 29, 'width_cm' => 24, 'height_cm' => 11, 'weight_kg' => 0.240, 'unit_cost_eur' => 0.9500],
+
+            ['kind' => 'laptop',  'condition' => 'new', 'provider' => 'PrimePack', 'length_cm' => 43, 'width_cm' => 33, 'height_cm' => 12, 'weight_kg' => 0.420, 'unit_cost_eur' => 1.1000],
+            ['kind' => 'tower',   'condition' => 'new', 'provider' => 'PrimePack', 'length_cm' => 56, 'width_cm' => 31, 'height_cm' => 46, 'weight_kg' => 0.820, 'unit_cost_eur' => 2.4000],
+            ['kind' => 'mini_pc', 'condition' => 'new', 'provider' => 'PrimePack', 'length_cm' => 31, 'width_cm' => 26, 'height_cm' => 12, 'weight_kg' => 0.260, 'unit_cost_eur' => 0.8800],
+        ];
+
+        foreach ($variants as $v) {
+            $pid = $providerId($v['provider']);
+            if (!$pid) continue;
+
+            $existingId = DB::table('box_variants')
+                ->where('kind', $v['kind'])
+                ->where('condition', $v['condition'])
+                ->where('provider_id', $pid)
+                ->value('id');
+
+            if (!$existingId) {
+                $existingId = DB::table('box_variants')->insertGetId([
+                    'kind' => $v['kind'],
+                    'condition' => $v['condition'],
+                    'provider_id' => $pid,
+                    'length_cm' => $v['length_cm'],
+                    'width_cm' => $v['width_cm'],
+                    'height_cm' => $v['height_cm'],
+                    'weight_kg' => $v['weight_kg'],
+                    'unit_cost_eur' => $v['unit_cost_eur'],
+                    'is_active' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } else {
+                DB::table('box_variants')->where('id', $existingId)->update([
+                    'length_cm' => $v['length_cm'],
+                    'width_cm' => $v['width_cm'],
+                    'height_cm' => $v['height_cm'],
+                    'weight_kg' => $v['weight_kg'],
+                    'unit_cost_eur' => $v['unit_cost_eur'],
+                    'is_active' => true,
+                    'updated_at' => now(),
+                ]);
+            }
+
+            // stock demo
+            DB::table('box_variant_stocks')->updateOrInsert(
+                ['box_variant_id' => $existingId],
+                [
+                    'on_hand_qty' => 500, // demo (luego lo ajusta usuario)
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]
+            );
+        }
 
         // -------------------------
         // PALLET TYPES
