@@ -76,7 +76,20 @@ class PalletizationService
     ): array {
         $boxTypes = DB::table('box_types')->get()->keyBy('code');
         // Adjuntar variantes de embalaje (box_variants) si vienen en el request
+        // 1) Si el request trae packaging, cargamos las box_variants seleccionadas (modo A)
         $items = $this->attachPackagingVariants($items);
+
+        // 2) Calculamos unidades por tipo y coste de cajas + validación de stock (modo A)
+        $packagingSummary = $this->computePackagingSummary($items);
+
+        // Si hay selección de packaging y es inválida (falta variante / sin stock), paramos aquí
+        if (!empty($packagingSummary['errors'])) {
+            return [
+                'error' => 'Selección de cajas inválida.',
+                'packaging' => $packagingSummary,
+            ];
+        }
+
 
 
         $query = DB::table('pallet_types')->orderBy('id');
@@ -253,6 +266,10 @@ class PalletizationService
                                 'total' => $costB,
                             ],
                         ],
+                        'total_box_cost' => (float)($packagingSummary['total_box_cost'] ?? 0),
+                        'total_cost' => (float)$totalPrice + (float)($packagingSummary['total_box_cost'] ?? 0),
+                        'box_cost_breakdown' => $packagingSummary['breakdown'] ?? [],
+                        'packaging' => $packagingSummary['selected'] ?? [],
                     ];
                 }
             }
@@ -263,7 +280,7 @@ class PalletizationService
         // ==========================================
         $all = array_merge($candidates, $mixCandidates);
 
-        usort($all, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
+        usort($all, fn($a, $b) => ($a['total_cost'] ?? INF) <=> ($b['total_cost'] ?? INF));
 
         $best = $all[0];
         $alternatives = array_slice($all, 1, 5);
@@ -622,10 +639,10 @@ class PalletizationService
     {
         $recs = [];
 
-        $bestTotal = (float) ($best['total_price'] ?? 0);
+        $bestTotal = (float) ($best['total_cost'] ?? ($best['total_price'] ?? 0));
 
         foreach ($alternatives as $alt) {
-            $altTotal = (float) ($alt['total_price'] ?? 0);
+            $altTotal = (float) ($alt['total_cost'] ?? ($alt['total_price'] ?? 0));
             if ($bestTotal <= 0) continue;
 
             $delta = ($altTotal - $bestTotal) / $bestTotal;
@@ -739,7 +756,7 @@ class PalletizationService
             return ['error' => 'No se pudo calcular ningún plan con las tarifas disponibles.'];
         }
 
-        usort($allCandidates, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
+        usort($allCandidates, fn($a, $b) => ($a['total_cost'] ?? INF) <=> ($b['total_cost'] ?? INF));
 
         $best = $allCandidates[0];
         $alternatives = array_slice($allCandidates, 1, 5);
@@ -760,7 +777,6 @@ class PalletizationService
             return $items;
         }
 
-        // Solo nos interesan estos 3 tipos lógicos
         $wanted = [];
         foreach (['tower', 'laptop', 'mini_pc'] as $k) {
             $id = isset($pack[$k]) ? (int)$pack[$k] : 0;
@@ -796,21 +812,126 @@ class PalletizationService
         foreach ($rows as $r) {
             $kind = (string)($r->kind ?? '');
             if (!in_array($kind, ['tower', 'laptop', 'mini_pc'], true)) continue;
-
-            // Si el usuario pasó un id para 'tower' pero el registro dice 'laptop', lo ignoramos (seguro)
             if (!isset($wanted[$kind]) || (int)$wanted[$kind] !== (int)$r->id) continue;
-
-            // Solo activas
             if (!(bool)$r->is_active) continue;
 
             $map[$kind] = $r;
         }
 
         if (!empty($map)) {
-            // Interno del service (para no reconsultar en cada simulación)
             $items['_packaging_variants'] = $map;
         }
 
         return $items;
+    }
+
+    private function computePackagingSummary(array $items): array
+    {
+        // 1) Unidades por tipo (si hay lines, lo sacamos de device_models->box_types.code)
+        $qty = [
+            'tower' => (int)($items['tower'] ?? 0),
+            'laptop' => (int)($items['laptop'] ?? 0),
+            'mini_pc' => (int)($items['mini_pc'] ?? 0),
+        ];
+
+        if (!empty($items['lines']) && is_array($items['lines'])) {
+            $modelQty = [];
+            foreach ($items['lines'] as $line) {
+                $id = (int)($line['device_model_id'] ?? 0);
+                $q = (int)($line['qty'] ?? 0);
+                if ($id > 0 && $q > 0) $modelQty[$id] = ($modelQty[$id] ?? 0) + $q;
+            }
+
+            if (!empty($modelQty)) {
+                $rows = DB::table('device_models as dm')
+                    ->join('box_types as bt', 'bt.id', '=', 'dm.box_type_id')
+                    ->whereIn('dm.id', array_keys($modelQty))
+                    ->select(['dm.id', 'bt.code as box_code'])
+                    ->get();
+
+                $qty = ['tower' => 0, 'laptop' => 0, 'mini_pc' => 0];
+                foreach ($rows as $r) {
+                    $code = (string)($r->box_code ?? '');
+                    $id = (int)$r->id;
+                    if (!isset($qty[$code])) continue;
+                    $qty[$code] += (int)($modelQty[$id] ?? 0);
+                }
+            }
+        }
+
+        $packRequested = is_array($items['packaging'] ?? null) && count($items['packaging']) > 0;
+        $selected = [];
+        $errors = [];
+        $warnings = [];
+
+        $totalBoxCost = 0.0;
+        $breakdown = [];
+
+        $variants = $items['_packaging_variants'] ?? [];
+
+        foreach (['tower', 'laptop', 'mini_pc'] as $kind) {
+            $need = (int)($qty[$kind] ?? 0);
+            $selId = isset($items['packaging'][$kind]) ? (int)$items['packaging'][$kind] : null;
+
+            $v = $variants[$kind] ?? null;
+
+            if ($packRequested && $need > 0) {
+                if (!$selId) {
+                    $errors[] = "Falta seleccionar caja para {$kind}.";
+                    continue;
+                }
+                if (!$v) {
+                    $errors[] = "La caja seleccionada para {$kind} no existe/no está activa.";
+                    continue;
+                }
+                if ((int)$v->on_hand_qty < $need) {
+                    $errors[] = "Stock insuficiente para {$kind}: necesitas {$need} y hay " . (int)$v->on_hand_qty . ".";
+                    continue;
+                }
+            }
+
+            if ($v) {
+                $selected[$kind] = [
+                    'id' => (int)$v->id,
+                    'kind' => (string)$v->kind,
+                    'condition' => (string)$v->condition,
+                    'provider_name' => (string)$v->provider_name,
+                    'unit_cost_eur' => (float)$v->unit_cost_eur,
+                    'on_hand_qty' => (int)$v->on_hand_qty,
+                    'length_cm' => (int)$v->length_cm,
+                    'width_cm' => (int)$v->width_cm,
+                    'height_cm' => (int)$v->height_cm,
+                ];
+
+                $unitCost = (float)$v->unit_cost_eur;
+                $isNew = ((string)$v->condition) === 'new';
+
+                $cost = ($isNew && $need > 0) ? ($need * $unitCost) : 0.0;
+
+                $breakdown[$kind] = [
+                    'qty' => $need,
+                    'unit_cost_eur' => $unitCost,
+                    'is_new' => $isNew,
+                    'total_cost_eur' => $cost,
+                ];
+
+                $totalBoxCost += $cost;
+            } else {
+                // No hay selección: si no se pidió packaging, es normal.
+                if ($need > 0 && $packRequested) {
+                    $warnings[] = "No hay datos de caja seleccionada para {$kind}.";
+                }
+            }
+        }
+
+        return [
+            'qty_by_kind' => $qty,
+            'selected' => $selected,
+            'breakdown' => $breakdown,
+            'total_box_cost' => $totalBoxCost,
+            'errors' => $errors,
+            'warnings' => $warnings,
+            'packaging_requested' => $packRequested,
+        ];
     }
 }
