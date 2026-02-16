@@ -75,6 +75,9 @@ class PalletizationService
         ?int $carrierId = null
     ): array {
         $boxTypes = DB::table('box_types')->get()->keyBy('code');
+        // Adjuntar variantes de embalaje (box_variants) si vienen en el request
+        $items = $this->attachPackagingVariants($items);
+
 
         $query = DB::table('pallet_types')->orderBy('id');
 
@@ -361,11 +364,18 @@ class PalletizationService
             if (!isset($boxTypes[$code])) continue;
             $b = $boxTypes[$code];
 
+            $pv = $items['_packaging_variants'][$code] ?? null;
+
+            // Dimensiones para apilar (si hay variante seleccionada, manda)
+            $boxLen = (int)($pv->length_cm ?? $b->length_cm);
+            $boxWid = (int)($pv->width_cm  ?? $b->width_cm);
+            $boxHei = (int)($pv->height_cm ?? $b->height_cm);
+
             $perLayer = $this->boxesPerLayer(
                 $palletL,
                 $palletW,
-                (int)$b->length_cm,
-                (int)$b->width_cm
+                $boxLen,
+                $boxWid
             );
 
             $unitKg = (float)($weightByCode[$code] ?? $b->weight_kg);
@@ -373,9 +383,20 @@ class PalletizationService
 
             $info[$code] = [
                 'per_layer' => $perLayer,
-                'height_cm' => (int)$b->height_cm,
+                'height_cm' => $boxHei,
                 'weight_kg' => $unitKg,   // solo informativo (UI/metrics)
                 'weight_g'  => $unitG,    // el cálculo real va con esto
+
+                'box_variant' => $pv ? [
+                    'id' => (int)$pv->id,
+                    'condition' => (string)$pv->condition,
+                    'provider_name' => (string)$pv->provider_name,
+                    'unit_cost_eur' => (float)$pv->unit_cost_eur,
+                    'on_hand_qty' => (int)$pv->on_hand_qty,
+                    'length_cm' => (int)$pv->length_cm,
+                    'width_cm' => (int)$pv->width_cm,
+                    'height_cm' => (int)$pv->height_cm,
+                ] : null,
             ];
         }
 
@@ -730,5 +751,66 @@ class PalletizationService
             'alternatives' => $alternatives,
             'recommendations' => $recommendations,
         ];
+    }
+
+    private function attachPackagingVariants(array $items): array
+    {
+        $pack = $items['packaging'] ?? null;
+        if (!is_array($pack) || empty($pack)) {
+            return $items;
+        }
+
+        // Solo nos interesan estos 3 tipos lógicos
+        $wanted = [];
+        foreach (['tower', 'laptop', 'mini_pc'] as $k) {
+            $id = isset($pack[$k]) ? (int)$pack[$k] : 0;
+            if ($id > 0) $wanted[$k] = $id;
+        }
+
+        if (empty($wanted)) {
+            return $items;
+        }
+
+        $rows = DB::table('box_variants as bv')
+            ->join('box_providers as bp', 'bp.id', '=', 'bv.provider_id')
+            ->leftJoin('box_variant_stocks as bvs', 'bvs.box_variant_id', '=', 'bv.id')
+            ->whereIn('bv.id', array_values($wanted))
+            ->select([
+                'bv.id',
+                'bv.kind',
+                'bv.condition',
+                'bv.provider_id',
+                'bp.name as provider_name',
+                'bp.provider_type',
+                'bv.length_cm',
+                'bv.width_cm',
+                'bv.height_cm',
+                'bv.weight_kg',
+                'bv.unit_cost_eur',
+                'bv.is_active',
+                DB::raw('COALESCE(bvs.on_hand_qty, 0) as on_hand_qty'),
+            ])
+            ->get();
+
+        $map = [];
+        foreach ($rows as $r) {
+            $kind = (string)($r->kind ?? '');
+            if (!in_array($kind, ['tower', 'laptop', 'mini_pc'], true)) continue;
+
+            // Si el usuario pasó un id para 'tower' pero el registro dice 'laptop', lo ignoramos (seguro)
+            if (!isset($wanted[$kind]) || (int)$wanted[$kind] !== (int)$r->id) continue;
+
+            // Solo activas
+            if (!(bool)$r->is_active) continue;
+
+            $map[$kind] = $r;
+        }
+
+        if (!empty($map)) {
+            // Interno del service (para no reconsultar en cada simulación)
+            $items['_packaging_variants'] = $map;
+        }
+
+        return $items;
     }
 }

@@ -29,6 +29,12 @@ class PalletizerController extends Controller
             'lines.*.device_model_id' => ['nullable', 'integer', 'exists:device_models,id'],
             'lines.*.qty' => ['nullable', 'integer', 'min:0'],
 
+            'packaging' => ['nullable', 'array'],
+            'packaging.tower' => ['nullable', 'integer', 'exists:box_variants,id'],
+            'packaging.laptop' => ['nullable', 'integer', 'exists:box_variants,id'],
+            'packaging.mini_pc' => ['nullable', 'integer', 'exists:box_variants,id'],
+
+
             'mini_pc'  => ['required', 'integer', 'min:0'],
             'tower'    => ['required', 'integer', 'min:0'],
             'laptop'   => ['required', 'integer', 'min:0'],
@@ -182,6 +188,11 @@ class PalletizerController extends Controller
         if (!empty($data['lines']) && is_array($data['lines'])) {
             $items['lines'] = $data['lines'];
         }
+
+        if (!empty($data['packaging']) && is_array($data['packaging'])) {
+            $items['packaging'] = $data['packaging'];
+        }
+
 
 
         $allowSeparators = (bool) $data['allow_separators'];
