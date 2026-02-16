@@ -304,7 +304,7 @@ class PalletizationService
         return max($a, $b);
     }
 
-    private function simulatePackingForPalletType(
+    function simulatePackingForPalletType(
         object $palletType,
         $boxTypes,
         array $items,
@@ -773,19 +773,14 @@ class PalletizationService
     private function attachPackagingVariants(array $items): array
     {
         $pack = $items['packaging'] ?? null;
-        if (!is_array($pack) || empty($pack)) {
-            return $items;
-        }
+        if (!is_array($pack) || empty($pack)) return $items;
 
         $wanted = [];
         foreach (['tower', 'laptop', 'mini_pc'] as $k) {
             $id = isset($pack[$k]) ? (int)$pack[$k] : 0;
             if ($id > 0) $wanted[$k] = $id;
         }
-
-        if (empty($wanted)) {
-            return $items;
-        }
+        if (empty($wanted)) return $items;
 
         $rows = DB::table('box_variants as bv')
             ->join('box_providers as bp', 'bp.id', '=', 'bv.provider_id')
@@ -814,20 +809,17 @@ class PalletizationService
             if (!in_array($kind, ['tower', 'laptop', 'mini_pc'], true)) continue;
             if (!isset($wanted[$kind]) || (int)$wanted[$kind] !== (int)$r->id) continue;
             if (!(bool)$r->is_active) continue;
-
             $map[$kind] = $r;
         }
 
-        if (!empty($map)) {
-            $items['_packaging_variants'] = $map;
-        }
-
+        if (!empty($map)) $items['_packaging_variants'] = $map;
         return $items;
     }
 
+
     private function computePackagingSummary(array $items): array
     {
-        // 1) Unidades por tipo (si hay lines, lo sacamos de device_models->box_types.code)
+        // Unidades por tipo lógico (desde lines si vienen)
         $qty = [
             'tower' => (int)($items['tower'] ?? 0),
             'laptop' => (int)($items['laptop'] ?? 0),
@@ -838,7 +830,7 @@ class PalletizationService
             $modelQty = [];
             foreach ($items['lines'] as $line) {
                 $id = (int)($line['device_model_id'] ?? 0);
-                $q = (int)($line['qty'] ?? 0);
+                $q  = (int)($line['qty'] ?? 0);
                 if ($id > 0 && $q > 0) $modelQty[$id] = ($modelQty[$id] ?? 0) + $q;
             }
 
@@ -860,19 +852,17 @@ class PalletizationService
         }
 
         $packRequested = is_array($items['packaging'] ?? null) && count($items['packaging']) > 0;
+        $variants = $items['_packaging_variants'] ?? [];
+
         $selected = [];
         $errors = [];
         $warnings = [];
-
         $totalBoxCost = 0.0;
         $breakdown = [];
-
-        $variants = $items['_packaging_variants'] ?? [];
 
         foreach (['tower', 'laptop', 'mini_pc'] as $kind) {
             $need = (int)($qty[$kind] ?? 0);
             $selId = isset($items['packaging'][$kind]) ? (int)$items['packaging'][$kind] : null;
-
             $v = $variants[$kind] ?? null;
 
             if ($packRequested && $need > 0) {
@@ -905,7 +895,6 @@ class PalletizationService
 
                 $unitCost = (float)$v->unit_cost_eur;
                 $isNew = ((string)$v->condition) === 'new';
-
                 $cost = ($isNew && $need > 0) ? ($need * $unitCost) : 0.0;
 
                 $breakdown[$kind] = [
@@ -916,11 +905,6 @@ class PalletizationService
                 ];
 
                 $totalBoxCost += $cost;
-            } else {
-                // No hay selección: si no se pidió packaging, es normal.
-                if ($need > 0 && $packRequested) {
-                    $warnings[] = "No hay datos de caja seleccionada para {$kind}.";
-                }
             }
         }
 

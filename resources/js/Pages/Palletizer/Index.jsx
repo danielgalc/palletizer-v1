@@ -342,6 +342,9 @@ export default function Index({ result }) {
 
     allow_separators: true,
 
+    // Selección de cajas por tipo lógico (box_variants)
+    packaging: { tower: null, laptop: null, mini_pc: null },
+
     carrier_mode: "auto", // auto | manual
     carrier_ids: [],
   });
@@ -418,6 +421,25 @@ export default function Index({ result }) {
   const [savingBoxById, setSavingBoxById] = useState({});
   const [boxMsgById, setBoxMsgById] = useState({});
 
+  // --- Packaging (box_variants + providers + stock) ---
+  const [boxProviders, setBoxProviders] = useState([]);
+  const [boxVariants, setBoxVariants] = useState([]);
+  const [loadingPackaging, setLoadingPackaging] = useState(false);
+  const [packagingError, setPackagingError] = useState(null);
+
+  // Filtros por tipo (kind): condición + proveedor
+  const [packFilters, setPackFilters] = useState({
+    tower: { condition: "reused", provider_id: null },
+    laptop: { condition: "reused", provider_id: null },
+    mini_pc: { condition: "reused", provider_id: null },
+  });
+
+  // Draft de stock por variante
+  const [stockDraftByVariantId, setStockDraftByVariantId] = useState({});
+  const [savingStockByVariantId, setSavingStockByVariantId] = useState({});
+  const [stockMsgByVariantId, setStockMsgByVariantId] = useState({});
+
+
   // --- Model modal ---
   const [openModelRowIdx, setOpenModelRowIdx] = useState(null);
   const modelRowRefs = useRef({});
@@ -469,6 +491,119 @@ export default function Index({ result }) {
     setOpenAltRows((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const fetchPackagingData = async () => {
+    setLoadingPackaging(true);
+    setPackagingError(null);
+
+    try {
+      const [rp, rv] = await Promise.all([
+        fetch("/api/box-providers"),
+        fetch("/api/box-variants?only_active=1"),
+      ]);
+
+      if (!rp.ok) throw new Error("No se pudieron cargar los proveedores de cajas");
+      if (!rv.ok) throw new Error("No se pudieron cargar las cajas disponibles");
+
+      const providers = await rp.json();
+      const variants = await rv.json();
+
+      const provList = Array.isArray(providers) ? providers : [];
+      const varList = Array.isArray(variants) ? variants : [];
+
+      setBoxProviders(provList);
+      setBoxVariants(varList);
+
+      // Inicializa drafts de stock
+      setStockDraftByVariantId((prev) => {
+        const next = { ...prev };
+        for (const v of varList) {
+          const id = Number(v.id);
+          if (!Number.isFinite(id)) continue;
+          if (next[id] === undefined) next[id] = Number(v.on_hand_qty ?? 0);
+        }
+        return next;
+      });
+
+      // Ajusta provider default por tipo/condición
+      setPackFilters((prev) => {
+        const next = { ...prev };
+        const kinds = ["tower", "laptop", "mini_pc"];
+        for (const k of kinds) {
+          const condition = next?.[k]?.condition ?? "reused";
+          const currentProvider = next?.[k]?.provider_id ?? null;
+
+          const candidates = varList.filter((v) => v.kind === k && v.condition === condition);
+          const providerIds = [
+            ...new Set(
+              candidates
+                .map((v) => Number(v.provider_id))
+                .filter((n) => Number.isFinite(n))
+            ),
+          ];
+          const first = providerIds.length > 0 ? providerIds[0] : null;
+
+          if (!currentProvider) {
+            next[k] = { ...next[k], provider_id: first };
+          } else if (first && !providerIds.includes(Number(currentProvider))) {
+            next[k] = { ...next[k], provider_id: first };
+          }
+        }
+        return next;
+      });
+    } catch (e) {
+      setPackagingError(e.message || "Error cargando cajas");
+    } finally {
+      setLoadingPackaging(false);
+    }
+  };
+
+  const setPackFilter = (kind, patch) => {
+    setPackFilters((prev) => ({
+      ...prev,
+      [kind]: { ...(prev?.[kind] || {}), ...patch },
+    }));
+  };
+
+  const selectPackagingVariant = (kind, variantId) => {
+    const id = variantId ? Number(variantId) : null;
+    setData("packaging", {
+      ...(data.packaging || { tower: null, laptop: null, mini_pc: null }),
+      [kind]: Number.isFinite(id) ? id : null,
+    });
+  };
+
+  const saveVariantStock = async (variantId) => {
+    const id = Number(variantId);
+    if (!Number.isFinite(id)) return;
+
+    const qty = Number(stockDraftByVariantId?.[id] ?? 0);
+
+    setSavingStockByVariantId((p) => ({ ...p, [id]: true }));
+    setStockMsgByVariantId((p) => ({ ...p, [id]: "" }));
+
+    try {
+      const res = await fetch(`/api/box-variants/${id}/stock`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on_hand_qty: Math.max(0, Math.floor(qty)) }),
+      });
+
+      if (!res.ok) throw new Error("No se pudo guardar el stock");
+      const updated = await res.json();
+
+      setBoxVariants((prev) =>
+        prev.map((v) => (Number(v.id) === id ? { ...v, ...updated } : v))
+      );
+
+      setStockMsgByVariantId((p) => ({ ...p, [id]: "OK" }));
+      setTimeout(() => setStockMsgByVariantId((p) => ({ ...p, [id]: "" })), 1200);
+    } catch (e) {
+      setStockMsgByVariantId((p) => ({ ...p, [id]: e.message || "Error" }));
+    } finally {
+      setSavingStockByVariantId((p) => ({ ...p, [id]: false }));
+    }
+  };
+
   const fetchBoxTypes = async () => {
     setLoadingBoxTypes(true);
     setBoxTypesError(null);
@@ -487,10 +622,18 @@ export default function Index({ result }) {
 
   const openBoxTypesModal = async () => {
     setBoxModalOpen(true);
+
+    // Cargar variantes/proveedores para selección real de cajas
+    if (boxProviders.length === 0 || boxVariants.length === 0) {
+      await fetchPackagingData();
+    }
+
+    // Mantener fallback (box_types) por si no se seleccionan cajas
     if (boxTypes.length === 0) {
       await fetchBoxTypes();
     }
   };
+
 
   const closeBoxTypesModal = () => {
     setBoxModalOpen(false);
@@ -1087,6 +1230,25 @@ export default function Index({ result }) {
     linesOk;
 
   const best = result?.plan?.best || null;
+  const bestTotalBoxCost = best ? Number(best.total_box_cost ?? 0) : 0;
+
+  const boxBreakdown =
+    best?.box_cost_breakdown && typeof best.box_cost_breakdown === "object"
+      ? best.box_cost_breakdown
+      : {};
+
+  const totalBoxesForCost = Object.values(boxBreakdown).reduce((acc, row) => {
+    const q = Number(row?.qty ?? 0);
+    return acc + (Number.isFinite(q) ? q : 0);
+  }, 0);
+
+  const eurPerBox = totalBoxesForCost > 0 ? bestTotalBoxCost / totalBoxesForCost : null;
+
+  const bestTotal =
+    best && best.total_cost !== undefined && best.total_cost !== null
+      ? Number(best.total_cost)
+      : (best ? Number(best.total_price ?? 0) + bestTotalBoxCost : 0);
+
   const alternatives = Array.isArray(result?.plan?.alternatives) ? result.plan.alternatives : [];
   const metrics = best?.metrics || null;
   const recommendations = Array.isArray(result?.plan?.recommendations) ? result.plan.recommendations : [];
@@ -1154,6 +1316,7 @@ export default function Index({ result }) {
   // Mantener legacy mini_pc/tower/laptop sincronizado con las líneas (para export / compat) REVISAR
   useEffect(() => {
     const totals = { mini_pc: 0, tower: 0, laptop: 0 };
+
 
     const lines = Array.isArray(data.lines) ? data.lines : [];
     for (const line of lines) {
@@ -1800,10 +1963,12 @@ export default function Index({ result }) {
                 </div>
               )}
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-5">
                 <Stat label="Pallets" value={fmtNum(best.pallet_count ?? best.pallets_count)} />
                 <Stat label="€/pallet" value={fmtEUR(pricePerPallet(best))} />
-                <Stat label="Total" value={fmtEUR(best.total_price)} />
+                <Stat label="€/caja" value={eurPerBox !== null ? fmtEUR(eurPerBox) : "—"} />
+                <Stat label="Total cajas" value={fmtEUR(bestTotalBoxCost)} />
+                <Stat label="Total" value={fmtEUR(bestTotal)} />
               </div>
 
               <div className="rounded-xl border border-ink-100 p-4">
@@ -2305,9 +2470,15 @@ export default function Index({ result }) {
       {/* Modal box types */}
       {boxModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 p-4">
-          <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-soft">
+          <div className="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-soft">
             <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
-              <div className="text-sm font-extrabold text-ink-900">Configurar tipos de caja</div>
+              <div>
+                <div className="text-sm font-extrabold text-ink-900">Configurar cajas</div>
+                <div className="mt-1 text-xs text-ink-500">
+                  Selecciona qué caja usar (nueva/reutilizada + proveedor) y ajusta el stock disponible.
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={closeBoxTypesModal}
@@ -2317,89 +2488,313 @@ export default function Index({ result }) {
               </button>
             </div>
 
-            <div ref={modelsModalBodyRef} className="max-h-[70vh] overflow-auto p-5">
-              {loadingBoxTypes ? (
+            <div className="max-h-[70vh] overflow-auto p-5">
+              {loadingPackaging ? (
                 <div className="text-sm text-ink-500">Cargando…</div>
-              ) : boxTypesError ? (
-                <div className="text-sm font-semibold text-red-600">{boxTypesError}</div>
-              ) : boxTypes.length === 0 ? (
-                <div className="text-sm text-ink-500">No hay tipos de caja.</div>
+              ) : packagingError ? (
+                <div className="text-sm font-semibold text-red-600">{packagingError}</div>
+              ) : boxVariants.length === 0 ? (
+                <div className="text-sm text-ink-500">No hay cajas disponibles.</div>
               ) : (
-                <div className="grid gap-3">
-                  {boxTypes.map((b) => (
-                    <div key={b.id} className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <div className="text-sm font-extrabold text-ink-900">{b.name}</div>
-                          <div className="mt-1 text-xs text-ink-500">{b.code}</div>
+                <div className="grid gap-4">
+                  {[
+                    { kind: "laptop", title: "Portátiles" },
+                    { kind: "tower", title: "Torres" },
+                    { kind: "mini_pc", title: "Mini PCs" },
+                  ].map(({ kind, title }) => {
+                    const selectedId = data?.packaging?.[kind] ? Number(data.packaging[kind]) : null;
+                    const condition = packFilters?.[kind]?.condition ?? "reused";
+                    const providerId = packFilters?.[kind]?.provider_id ? Number(packFilters[kind].provider_id) : null;
+
+                    const pool = boxVariants.filter((v) => v.kind === kind && v.condition === condition);
+
+                    const providerIds = [
+                      ...new Set(pool.map((v) => Number(v.provider_id)).filter((n) => Number.isFinite(n))),
+                    ];
+
+                    const providersForKind = boxProviders.filter((p) => providerIds.includes(Number(p.id)));
+
+                    const effectiveProviderId =
+                      providerId && providerIds.includes(providerId) ? providerId : (providerIds[0] ?? null);
+
+                    const list = pool.filter((v) => {
+                      if (!effectiveProviderId) return true;
+                      return Number(v.provider_id) === Number(effectiveProviderId);
+                    });
+
+                    const selectedVariant = selectedId ? boxVariants.find((v) => Number(v.id) === selectedId) : null;
+
+                    return (
+                      <div key={kind} className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-extrabold text-ink-900">{title}</div>
+                            <div className="mt-1 text-xs text-ink-500">
+                              {selectedVariant ? (
+                                <>
+                                  Seleccionada:{" "}
+                                  <b>
+                                    {selectedVariant.provider_name} ·{" "}
+                                    {selectedVariant.condition === "new" ? "Nueva" : "Reutilizada"} ·{" "}
+                                    {selectedVariant.length_cm}×{selectedVariant.width_cm}×{selectedVariant.height_cm} cm
+                                  </b>
+                                </>
+                              ) : (
+                                <>No hay caja seleccionada.</>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex w-full flex-wrap items-end gap-3 sm:w-auto sm:flex-nowrap">
+                            <div className="w-full sm:w-36">
+                              <div className="mb-1 text-[10px] font-extrabold uppercase tracking-wide text-ink-500">
+                                Tipo
+                              </div>
+                              <select
+                                value={condition}
+                                onChange={(e) => {
+                                  const nextCond = e.target.value;
+                                  setPackFilter(kind, { condition: nextCond, provider_id: null });
+                                }}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
+                              >
+                                <option value="reused">Reutilizada</option>
+                                <option value="new">Nueva</option>
+                              </select>
+                            </div>
+
+                            <div className="w-full sm:w-64">
+                              <div className="mb-1 text-[10px] font-extrabold uppercase tracking-wide text-ink-500">
+                                Proveedor
+                              </div>
+                              <select
+                                value={effectiveProviderId ?? ""}
+                                onChange={(e) => {
+                                  const v = e.target.value ? Number(e.target.value) : null;
+                                  setPackFilter(kind, { provider_id: v });
+                                }}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
+                              >
+                                {providersForKind.length === 0 ? (
+                                  <option value="">(sin proveedores)</option>
+                                ) : (
+                                  providersForKind.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name}
+                                    </option>
+                                  ))
+                                )}
+                              </select>
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {boxMsgById[b.id] && (
-                            <div className="text-xs font-extrabold text-ink-700">{boxMsgById[b.id]}</div>
+                        <div className="mt-3 overflow-hidden rounded-xl ring-1 ring-ink-100">
+                          <div className="grid grid-cols-[1fr_140px_120px_140px_120px] gap-0 bg-white px-3 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
+                            <div>Caja</div>
+                            <div className="text-right">Dimensiones</div>
+                            <div className="text-right">€/caja</div>
+                            <div className="text-right">Stock</div>
+                            <div className="text-right">Acción</div>
+                          </div>
+
+                          {list.length === 0 ? (
+                            <div className="bg-white px-3 py-3 text-sm font-semibold text-ink-600">
+                              No hay cajas para estos filtros.
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-ink-100 bg-white">
+                              {list.map((v) => {
+                                const id = Number(v.id);
+                                const isSelected = selectedId && id === selectedId;
+
+                                const stockDraft = stockDraftByVariantId?.[id];
+                                const stockValue =
+                                  stockDraft !== undefined ? stockDraft : Number(v.on_hand_qty ?? 0);
+
+                                const cost = Number(v.unit_cost_eur ?? 0);
+
+                                return (
+                                  <div key={id} className="grid grid-cols-[1fr_140px_120px_140px_120px] items-center gap-2 px-3 py-2">
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-semibold text-ink-900">
+                                        {v.provider_name} · {v.condition === "new" ? "Nueva" : "Reutilizada"}
+                                      </div>
+                                      <div className="truncate text-xs text-ink-500">
+                                        id {id}{isSelected ? " · seleccionada" : ""}
+                                      </div>
+                                    </div>
+
+                                    <div className="text-right text-sm font-semibold text-ink-800">
+                                      {fmtNum(v.length_cm)}×{fmtNum(v.width_cm)}×{fmtNum(v.height_cm)}
+                                    </div>
+
+                                    <div className="text-right text-sm font-semibold text-ink-800">
+                                      {fmtEUR(cost)}
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-2">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={stockValue}
+                                        onChange={(e) => {
+                                          const val = e.target.value === "" ? "" : Number(e.target.value);
+                                          setStockDraftByVariantId((p) => ({ ...p, [id]: val }));
+                                        }}
+                                        className="w-24 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
+                                      />
+
+                                      <button
+                                        type="button"
+                                        onClick={() => saveVariantStock(id)}
+                                        disabled={!!savingStockByVariantId?.[id]}
+                                        className="rounded-xl bg-ink-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-ink-800 disabled:opacity-60"
+                                        title="Guardar stock"
+                                      >
+                                        {savingStockByVariantId?.[id] ? "..." : "OK"}
+                                      </button>
+
+                                      {stockMsgByVariantId?.[id] ? (
+                                        <span
+                                          className={`text-[10px] font-extrabold ${stockMsgByVariantId[id] === "OK" ? "text-green-700" : "text-red-600"
+                                            }`}
+                                        >
+                                          {stockMsgByVariantId[id]}
+                                        </span>
+                                      ) : null}
+                                    </div>
+
+                                    <div className="flex items-center justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => selectPackagingVariant(kind, id)}
+                                        className={`rounded-xl px-3 py-2 text-xs font-extrabold ${isSelected
+                                          ? "bg-ink-900 text-white"
+                                          : "border border-ink-200 bg-white text-ink-800 hover:bg-ink-50"
+                                          }`}
+                                      >
+                                        {isSelected ? "En uso" : "Usar"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => saveBoxType(b.id)}
-                            disabled={!!savingBoxById[b.id]}
-                            className="rounded-xl bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800 disabled:opacity-60"
-                          >
-                            {savingBoxById[b.id] ? "Guardando…" : "Guardar"}
-                          </button>
                         </div>
                       </div>
-
-                      <div className="mt-3 grid grid-cols-4 gap-3">
-                        <Field label="Largo (cm)">
-                          <input
-                            type="number"
-                            value={b.length_cm}
-                            onChange={(e) => onBoxChange(b.id, "length_cm", Number(e.target.value))}
-                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                          />
-                        </Field>
-
-                        <Field label="Ancho (cm)">
-                          <input
-                            type="number"
-                            value={b.width_cm}
-                            onChange={(e) => onBoxChange(b.id, "width_cm", Number(e.target.value))}
-                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                          />
-                        </Field>
-
-                        <Field label="Alto (cm)">
-                          <input
-                            type="number"
-                            value={b.height_cm}
-                            onChange={(e) => onBoxChange(b.id, "height_cm", Number(e.target.value))}
-                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                          />
-                        </Field>
-
-                        <Field label="Peso (kg)">
-                          <input
-                            type="number"
-                            value={b.weight_kg}
-                            onChange={(e) => onBoxChange(b.id, "weight_kg", Number(e.target.value))}
-                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                          />
-                        </Field>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
+
+              {/* Mantengo tus box_types como fallback, sin tocar nada fuera del modal */}
+              <details className="mt-4 rounded-2xl border border-ink-100 bg-ink-50 p-4">
+                <summary className="cursor-pointer text-sm font-extrabold text-ink-900">
+                  Editar dimensiones base (fallback)
+                </summary>
+
+                <div className="mt-3">
+                  {loadingBoxTypes ? (
+                    <div className="text-sm text-ink-500">Cargando…</div>
+                  ) : boxTypesError ? (
+                    <div className="text-sm font-semibold text-red-600">{boxTypesError}</div>
+                  ) : boxTypes.length === 0 ? (
+                    <div className="text-sm text-ink-500">No hay tipos de caja.</div>
+                  ) : (
+                    <div className="grid gap-3">
+                      {boxTypes.map((b) => (
+                        <div key={b.id} className="rounded-2xl border border-ink-100 bg-white p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-sm font-extrabold text-ink-900">{b.name}</div>
+                              <div className="mt-1 text-xs text-ink-500">{b.code}</div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {boxMsgById[b.id] && (
+                                <div className="text-xs font-extrabold text-ink-700">{boxMsgById[b.id]}</div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => saveBoxType(b.id)}
+                                disabled={!!savingBoxById[b.id]}
+                                className="rounded-xl bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800 disabled:opacity-60"
+                              >
+                                {savingBoxById[b.id] ? "Guardando…" : "Guardar"}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-4 gap-3">
+                            <Field label="Largo (cm)">
+                              <input
+                                type="number"
+                                value={b.length_cm}
+                                onChange={(e) => onBoxChange(b.id, "length_cm", Number(e.target.value))}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </Field>
+
+                            <Field label="Ancho (cm)">
+                              <input
+                                type="number"
+                                value={b.width_cm}
+                                onChange={(e) => onBoxChange(b.id, "width_cm", Number(e.target.value))}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </Field>
+
+                            <Field label="Alto (cm)">
+                              <input
+                                type="number"
+                                value={b.height_cm}
+                                onChange={(e) => onBoxChange(b.id, "height_cm", Number(e.target.value))}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </Field>
+
+                            <Field label="Peso (kg)">
+                              <input
+                                type="number"
+                                value={b.weight_kg}
+                                onChange={(e) => onBoxChange(b.id, "weight_kg", Number(e.target.value))}
+                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                              />
+                            </Field>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </details>
+
+              <div className="mt-4 rounded-xl border border-ink-100 bg-white p-4 text-xs text-ink-600">
+                <b>Nota:</b> La selección de cajas y stock se usa al calcular. Si no seleccionas una caja, se usará el fallback de box_types.
+              </div>
             </div>
 
             <div className="border-t border-ink-100 px-5 py-4">
-              <div className="text-xs text-ink-500">
-                Cambios aquí afectan al cálculo de capas, altura y peso.
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-ink-500">
+                  Cambios aquí afectan al cálculo de capas (si hay packaging seleccionado).
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchPackagingData}
+                  className="rounded-xl border border-ink-200 bg-white px-3 py-2 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
+                >
+                  Recargar
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
 
       {/* Modal device models */}
       {modelsModalOpen && (
@@ -2573,27 +2968,8 @@ export default function Index({ result }) {
 
                               {/* Caja (UI placeholder) */}
                               <div className="flex items-center justify-center">
-                                <div className="inline-flex h-10 items-center rounded-xl border border-ink-200 bg-white p-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => updateLine(idx, { box_condition: "new" })}
-                                    className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "new"
-                                      ? "bg-ink-900 text-white"
-                                      : "text-ink-700 hover:bg-ink-50"
-                                      }`}
-                                  >
-                                    Nueva
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => updateLine(idx, { box_condition: "reuse" })}
-                                    className={`px-3 py-1.5 text-[11px] font-extrabold rounded-lg ${(line?.box_condition ?? "new") === "reuse"
-                                      ? "bg-ink-900 text-white"
-                                      : "text-ink-700 hover:bg-ink-50"
-                                      }`}
-                                  >
-                                    Reutil.
-                                  </button>
+                                <div className="max-w-[140px] text-center text-[10px] font-semibold leading-snug text-ink-500">
+                                  Se selecciona en <b>Configurar cajas</b>
                                 </div>
                               </div>
 
@@ -2640,42 +3016,42 @@ export default function Index({ result }) {
             </div>
           </div>
         </div>
-       )} {/* Dropdown de modelos (portal) */}
-          {modelDropdown.open &&
-          modelDropdown.rect &&
-          Array.isArray(modelDropdown.items) &&
-          modelDropdown.items.length > 0
-            ? createPortal(
-                <div
-                  ref={modelDropdownRef}
-                  style={{
-                    position: "fixed",
-                    left: modelDropdown.rect.left,
-                    top: modelDropdown.rect.top + modelDropdown.rect.height + 8,
-                    width: modelDropdown.rect.width,
-                    zIndex: 9999,
-                  }}
-                  className="max-h-64 overflow-auto rounded-xl border border-ink-100 bg-white shadow-soft"
-                >
-                  {modelDropdown.items.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => {
-                        updateLine(modelDropdown.idx, { device_model_id: Number(m.id), model_query: "" });
-                        setOpenModelRowIdx(null);
-                        setModelDropdown((s) => ({ ...s, open: false }));
-                      }}
-                      className="block w-full px-3 py-2 text-left text-[13px] font-semibold text-ink-800 hover:bg-brand-50"
-                      title={modelLabel(m)}
-                    >
-                      <div className="truncate">{modelLabel(m)}</div>
-                    </button>
-                  ))}
-                </div>,
-                document.body
-              )
-            : null}
+      )} {/* Dropdown de modelos (portal) */}
+      {modelDropdown.open &&
+        modelDropdown.rect &&
+        Array.isArray(modelDropdown.items) &&
+        modelDropdown.items.length > 0
+        ? createPortal(
+          <div
+            ref={modelDropdownRef}
+            style={{
+              position: "fixed",
+              left: modelDropdown.rect.left,
+              top: modelDropdown.rect.top + modelDropdown.rect.height + 8,
+              width: modelDropdown.rect.width,
+              zIndex: 9999,
+            }}
+            className="max-h-64 overflow-auto rounded-xl border border-ink-100 bg-white shadow-soft"
+          >
+            {modelDropdown.items.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  updateLine(modelDropdown.idx, { device_model_id: Number(m.id), model_query: "" });
+                  setOpenModelRowIdx(null);
+                  setModelDropdown((s) => ({ ...s, open: false }));
+                }}
+                className="block w-full px-3 py-2 text-left text-[13px] font-semibold text-ink-800 hover:bg-brand-50"
+                title={modelLabel(m)}
+              >
+                <div className="truncate">{modelLabel(m)}</div>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+        : null}
     </AppLayout>
   );
 }
