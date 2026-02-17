@@ -190,7 +190,17 @@ class PalletizerController extends Controller
         }
 
         if (!empty($data['packaging']) && is_array($data['packaging'])) {
-            $items['packaging'] = $data['packaging'];
+            // Solo pasar packaging si al menos un tipo tiene un variant_id válido (> 0)
+            $packHasValues = false;
+            foreach ($data['packaging'] as $v) {
+                if ($v !== null && (int)$v > 0) {
+                    $packHasValues = true;
+                    break;
+                }
+            }
+            if ($packHasValues) {
+                $items['packaging'] = $data['packaging'];
+            }
         }
 
 

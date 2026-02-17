@@ -164,6 +164,11 @@ class PalletizationService
                 'pallet_count' => (int) $sim['pallet_count'],
                 'price_per_pallet' => $pricePerPallet,
                 'total_price' => $totalPrice,
+                // Coste de cajas: se añade al total pero NO influye en la ordenación
+                'total_box_cost' => (float)($packagingSummary['total_box_cost'] ?? 0),
+                'total_cost' => $totalPrice + (float)($packagingSummary['total_box_cost'] ?? 0),
+                'box_cost_breakdown' => $packagingSummary['breakdown'] ?? [],
+                'packaging' => $packagingSummary['selected'] ?? [],
                 'pallets' => $sim['pallets'] ?? [],
                 'metrics' => $sim['metrics'] ?? [],
                 'warnings' => $sim['warnings'] ?? [],
@@ -280,7 +285,10 @@ class PalletizationService
         // ==========================================
         $all = array_merge($candidates, $mixCandidates);
 
-        usort($all, fn($a, $b) => ($a['total_cost'] ?? INF) <=> ($b['total_cost'] ?? INF));
+        // IMPORTANTE: el mejor plan se elige SOLO por total_price (coste de transporte).
+        // El coste de cajas (total_box_cost) se suma al mostrar el resultado pero NO influye
+        // en la selección del plan óptimo.
+        usort($all, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
 
         $best = $all[0];
         $alternatives = array_slice($all, 1, 5);
@@ -756,7 +764,8 @@ class PalletizationService
             return ['error' => 'No se pudo calcular ningún plan con las tarifas disponibles.'];
         }
 
-        usort($allCandidates, fn($a, $b) => ($a['total_cost'] ?? INF) <=> ($b['total_cost'] ?? INF));
+        // Igual que en calculateBestPlan: ordenar por total_price (sin cajas)
+        usort($allCandidates, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
 
         $best = $allCandidates[0];
         $alternatives = array_slice($allCandidates, 1, 5);
@@ -796,7 +805,6 @@ class PalletizationService
                 'bv.length_cm',
                 'bv.width_cm',
                 'bv.height_cm',
-                'bv.weight_kg',
                 'bv.unit_cost_eur',
                 'bv.is_active',
                 DB::raw('COALESCE(bvs.on_hand_qty, 0) as on_hand_qty'),

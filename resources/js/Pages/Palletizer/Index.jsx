@@ -429,13 +429,12 @@ export default function Index({ result }) {
 
   // Filtros por tipo (kind): condición + proveedor
   const [packFilters, setPackFilters] = useState({
-    tower: { condition: "reused", provider_id: null },
-    laptop: { condition: "reused", provider_id: null },
-    mini_pc: { condition: "reused", provider_id: null },
+    tower: { condition: "", provider_id: null },
+    laptop: { condition: "", provider_id: null },
+    mini_pc: { condition: "", provider_id: null },
   });
 
-  // Draft de stock por variante
-  const [stockDraftByVariantId, setStockDraftByVariantId] = useState({});
+  // Estado de guardado/disponibilidad por variante
   const [savingStockByVariantId, setSavingStockByVariantId] = useState({});
   const [stockMsgByVariantId, setStockMsgByVariantId] = useState({});
 
@@ -513,26 +512,39 @@ export default function Index({ result }) {
       setBoxProviders(provList);
       setBoxVariants(varList);
 
-      // Inicializa drafts de stock
-      setStockDraftByVariantId((prev) => {
-        const next = { ...prev };
-        for (const v of varList) {
-          const id = Number(v.id);
-          if (!Number.isFinite(id)) continue;
-          if (next[id] === undefined) next[id] = Number(v.on_hand_qty ?? 0);
-        }
-        return next;
-      });
-
-      // Ajusta provider default por tipo/condición
+      // Ajusta condition y provider default por tipo
       setPackFilters((prev) => {
         const next = { ...prev };
         const kinds = ["tower", "laptop", "mini_pc"];
         for (const k of kinds) {
-          const condition = next?.[k]?.condition ?? "reused";
+          const currentCondition = next?.[k]?.condition ?? "";
           const currentProvider = next?.[k]?.provider_id ?? null;
 
-          const candidates = varList.filter((v) => v.kind === k && v.condition === condition);
+          // Si no hay condición seleccionada, tomar la primera disponible para este kind
+          const conditionsForKind = [
+            ...new Set(
+              varList
+                .filter((v) => v.kind === k)
+                .map((v) => String(v.condition))
+                .filter(Boolean)
+            ),
+          ];
+          // Prioridad: new > reused
+          const preferredOrder = ["new", "reused"];
+          const firstCondition =
+            conditionsForKind.find((c) => preferredOrder.includes(c)) ??
+            conditionsForKind[0] ??
+            "";
+
+          const effectiveCondition =
+            currentCondition && conditionsForKind.includes(currentCondition)
+              ? currentCondition
+              : firstCondition;
+
+          // Calcular provider para esa condición
+          const candidates = varList.filter(
+            (v) => v.kind === k && (!effectiveCondition || v.condition === effectiveCondition)
+          );
           const providerIds = [
             ...new Set(
               candidates
@@ -542,11 +554,13 @@ export default function Index({ result }) {
           ];
           const first = providerIds.length > 0 ? providerIds[0] : null;
 
-          if (!currentProvider) {
-            next[k] = { ...next[k], provider_id: first };
-          } else if (first && !providerIds.includes(Number(currentProvider))) {
-            next[k] = { ...next[k], provider_id: first };
-          }
+          next[k] = {
+            condition: effectiveCondition,
+            provider_id:
+              currentProvider && providerIds.includes(Number(currentProvider))
+                ? currentProvider
+                : first,
+          };
         }
         return next;
       });
@@ -572,33 +586,34 @@ export default function Index({ result }) {
     });
   };
 
-  const saveVariantStock = async (variantId) => {
+  const toggleVariantAvailability = async (variantId) => {
     const id = Number(variantId);
     if (!Number.isFinite(id)) return;
 
-    const qty = Number(stockDraftByVariantId?.[id] ?? 0);
+    // Determinar estado actual desde boxVariants
+    const current = boxVariants.find((v) => Number(v.id) === id);
+    const currentQty = Number(current?.on_hand_qty ?? 0);
+    // Si tiene stock → poner a 0 (no disponible). Si no tiene → poner a 1 (disponible).
+    const nextQty = currentQty > 0 ? 0 : 1;
 
     setSavingStockByVariantId((p) => ({ ...p, [id]: true }));
-    setStockMsgByVariantId((p) => ({ ...p, [id]: "" }));
 
     try {
       const res = await fetch(`/api/box-variants/${id}/stock`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ on_hand_qty: Math.max(0, Math.floor(qty)) }),
+        body: JSON.stringify({ on_hand_qty: nextQty }),
       });
 
-      if (!res.ok) throw new Error("No se pudo guardar el stock");
+      if (!res.ok) throw new Error("No se pudo actualizar la disponibilidad");
       const updated = await res.json();
 
       setBoxVariants((prev) =>
         prev.map((v) => (Number(v.id) === id ? { ...v, ...updated } : v))
       );
-
-      setStockMsgByVariantId((p) => ({ ...p, [id]: "OK" }));
-      setTimeout(() => setStockMsgByVariantId((p) => ({ ...p, [id]: "" })), 1200);
     } catch (e) {
       setStockMsgByVariantId((p) => ({ ...p, [id]: e.message || "Error" }));
+      setTimeout(() => setStockMsgByVariantId((p) => ({ ...p, [id]: "" })), 2000);
     } finally {
       setSavingStockByVariantId((p) => ({ ...p, [id]: false }));
     }
@@ -1774,19 +1789,22 @@ export default function Index({ result }) {
               </label>
             </div>
 
-            {/* Tipos de caja */}
+            {/* Cajas configuradas */}
             <details className="rounded-2xl border border-ink-100 bg-ink-50 p-4">
               <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-extrabold text-ink-900">
-                <span>Datos de cajas (actual)</span>
+                <span>Cajas configuradas</span>
                 <span className="text-xs font-semibold text-ink-500">
-                  {boxTypes.length > 0 ? `${boxTypes.length} tipos` : ""}
+                  {(() => {
+                    const pkg = data.packaging || {};
+                    const count = [pkg.tower, pkg.laptop, pkg.mini_pc].filter((v) => v != null && Number(v) > 0).length;
+                    return count > 0 ? `${count} seleccionadas` : "Sin selección";
+                  })()}
                 </span>
               </summary>
 
               <div className="mt-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs text-ink-500">Valores usados para el cálculo</div>
-
+                  <div className="text-xs text-ink-500">Cajas en uso para el cálculo</div>
                   <button
                     type="button"
                     onClick={openBoxTypesModal}
@@ -1796,29 +1814,77 @@ export default function Index({ result }) {
                   </button>
                 </div>
 
-                {loadingBoxTypes ? (
-                  <div className="mt-2 text-sm text-ink-500">Cargando…</div>
-                ) : boxTypesError ? (
-                  <div className="mt-2 text-xs font-semibold text-red-600">{boxTypesError}</div>
-                ) : boxTypes.length === 0 ? (
-                  <div className="mt-2 text-sm text-ink-500">No hay tipos de caja cargados.</div>
-                ) : (
-                  <div className="mt-3 grid gap-3">
-                    {boxTypes.map((b) => (
-                      <div key={b.id} className="rounded-xl bg-white p-3 ring-1 ring-ink-100">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-extrabold text-ink-900">{b.name}</div>
-                          <span className="text-xs font-semibold text-ink-500">{b.code}</span>
-                        </div>
-                        <div className="mt-2 text-xs text-ink-600">
-                          {b.length_cm}×{b.width_cm}×{b.height_cm} cm · {Number(b.weight_kg).toFixed(2)} kg/caja
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {(() => {
+                  const kinds = [
+                    { kind: "tower", label: "Torres" },
+                    { kind: "laptop", label: "Portátiles" },
+                    { kind: "mini_pc", label: "Mini PCs" },
+                  ];
 
-                <div className="mt-2 text-xs text-ink-500">Estos valores se usan para calcular capas, altura y peso.</div>
+                  const selectedAny = kinds.some(({ kind }) => {
+                    const id = data.packaging?.[kind];
+                    return id != null && Number(id) > 0;
+                  });
+
+                  if (!selectedAny) {
+                    return (
+                      <div className="mt-3 rounded-xl bg-white p-3 ring-1 ring-ink-100 text-sm text-ink-500">
+                        No hay cajas seleccionadas. Usa <b>Configurar cajas</b> para asignar una caja por tipo de equipo.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="mt-3 grid gap-2">
+                      {kinds.map(({ kind, label }) => {
+                        const variantId = data.packaging?.[kind];
+                        const v = variantId ? boxVariants.find((bv) => Number(bv.id) === Number(variantId)) : null;
+
+                        if (!v) {
+                          return (
+                            <div key={kind} className="rounded-xl bg-white p-3 ring-1 ring-ink-100">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-extrabold text-ink-900">{label}</span>
+                                <span className="text-xs text-ink-400">Sin caja asignada</span>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const condLabel = v.condition === "new" ? "Nueva" : "Reutilizada";
+                        const inStock = Number(v.on_hand_qty ?? 0) > 0;
+
+                        return (
+                          <div key={kind} className="rounded-xl bg-white p-3 ring-1 ring-ink-100">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-extrabold text-ink-900">{label}</span>
+                                  <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-600 ring-1 ring-ink-100">
+                                    {condLabel}
+                                  </span>
+                                  {inStock ? (
+                                    <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-extrabold text-green-700 ring-1 ring-green-200">
+                                      Disponible
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-extrabold text-red-600 ring-1 ring-red-200">
+                                      Sin stock
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-1 text-xs text-ink-500">
+                                  {v.provider_name} · {v.length_cm}×{v.width_cm}×{v.height_cm} cm
+                                  {Number(v.unit_cost_eur) > 0 ? ` · ${fmtEUR(v.unit_cost_eur)}/caja` : " · Sin coste"}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </details>
 
@@ -2475,7 +2541,7 @@ export default function Index({ result }) {
               <div>
                 <div className="text-sm font-extrabold text-ink-900">Configurar cajas</div>
                 <div className="mt-1 text-xs text-ink-500">
-                  Selecciona qué caja usar (nueva/reutilizada + proveedor) y ajusta el stock disponible.
+                  Selecciona qué caja usar por tipo de equipo (nueva/reutilizada + proveedor) y marca si hay disponibilidad.
                 </div>
               </div>
 
@@ -2506,7 +2572,9 @@ export default function Index({ result }) {
                     const condition = packFilters?.[kind]?.condition ?? "reused";
                     const providerId = packFilters?.[kind]?.provider_id ? Number(packFilters[kind].provider_id) : null;
 
-                    const pool = boxVariants.filter((v) => v.kind === kind && v.condition === condition);
+                    const pool = boxVariants.filter(
+                      (v) => v.kind === kind && (!condition || v.condition === condition)
+                    );
 
                     const providerIds = [
                       ...new Set(pool.map((v) => Number(v.provider_id)).filter((n) => Number.isFinite(n))),
@@ -2522,6 +2590,7 @@ export default function Index({ result }) {
                       return Number(v.provider_id) === Number(effectiveProviderId);
                     });
 
+                    // Variante seleccionada (puede ser de cualquier condición)
                     const selectedVariant = selectedId ? boxVariants.find((v) => Number(v.id) === selectedId) : null;
 
                     return (
@@ -2558,8 +2627,9 @@ export default function Index({ result }) {
                                 }}
                                 className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
                               >
-                                <option value="reused">Reutilizada</option>
+                                <option value="">Todas</option>
                                 <option value="new">Nueva</option>
+                                <option value="reused">Reutilizada</option>
                               </select>
                             </div>
 
@@ -2590,11 +2660,10 @@ export default function Index({ result }) {
                         </div>
 
                         <div className="mt-3 overflow-hidden rounded-xl ring-1 ring-ink-100">
-                          <div className="grid grid-cols-[1fr_140px_120px_140px_120px] gap-0 bg-white px-3 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
+                          <div className="grid grid-cols-[1fr_140px_120px_120px] gap-0 bg-white px-3 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
                             <div>Caja</div>
                             <div className="text-right">Dimensiones</div>
                             <div className="text-right">€/caja</div>
-                            <div className="text-right">Stock</div>
                             <div className="text-right">Acción</div>
                           </div>
 
@@ -2607,21 +2676,41 @@ export default function Index({ result }) {
                               {list.map((v) => {
                                 const id = Number(v.id);
                                 const isSelected = selectedId && id === selectedId;
-
-                                const stockDraft = stockDraftByVariantId?.[id];
-                                const stockValue =
-                                  stockDraft !== undefined ? stockDraft : Number(v.on_hand_qty ?? 0);
-
+                                const isSaving = !!savingStockByVariantId?.[id];
+                                const isAvailable = Number(v.on_hand_qty ?? 0) > 0;
                                 const cost = Number(v.unit_cost_eur ?? 0);
 
                                 return (
-                                  <div key={id} className="grid grid-cols-[1fr_140px_120px_140px_120px] items-center gap-2 px-3 py-2">
+                                  <div key={id} className="grid grid-cols-[1fr_140px_120px_120px] items-center gap-2 px-3 py-2">
                                     <div className="min-w-0">
                                       <div className="truncate text-sm font-semibold text-ink-900">
                                         {v.provider_name} · {v.condition === "new" ? "Nueva" : "Reutilizada"}
                                       </div>
-                                      <div className="truncate text-xs text-ink-500">
-                                        id {id}{isSelected ? " · seleccionada" : ""}
+                                      <div className="mt-1 flex items-center gap-2">
+                                        {/* Badge disponibilidad */}
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleVariantAvailability(id)}
+                                          disabled={isSaving}
+                                          title={isAvailable ? "Marcar como no disponible" : "Marcar como disponible"}
+                                          className={[
+                                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold transition",
+                                            "ring-1 disabled:opacity-60 cursor-pointer",
+                                            isAvailable
+                                              ? "bg-green-50 text-green-700 ring-green-200 hover:bg-green-100"
+                                              : "bg-red-50 text-red-600 ring-red-200 hover:bg-red-100",
+                                          ].join(" ")}
+                                        >
+                                          {isSaving ? "…" : isAvailable ? "✓ Disponible" : "✗ No disponible"}
+                                        </button>
+                                        {isSelected && (
+                                          <span className="text-[10px] font-extrabold text-ink-400">en uso</span>
+                                        )}
+                                        {stockMsgByVariantId?.[id] ? (
+                                          <span className="text-[10px] font-extrabold text-red-600">
+                                            {stockMsgByVariantId[id]}
+                                          </span>
+                                        ) : null}
                                       </div>
                                     </div>
 
@@ -2630,39 +2719,7 @@ export default function Index({ result }) {
                                     </div>
 
                                     <div className="text-right text-sm font-semibold text-ink-800">
-                                      {fmtEUR(cost)}
-                                    </div>
-
-                                    <div className="flex items-center justify-end gap-2">
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={stockValue}
-                                        onChange={(e) => {
-                                          const val = e.target.value === "" ? "" : Number(e.target.value);
-                                          setStockDraftByVariantId((p) => ({ ...p, [id]: val }));
-                                        }}
-                                        className="w-24 rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-800 outline-none ring-brand-500 focus:ring-2"
-                                      />
-
-                                      <button
-                                        type="button"
-                                        onClick={() => saveVariantStock(id)}
-                                        disabled={!!savingStockByVariantId?.[id]}
-                                        className="rounded-xl bg-ink-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-ink-800 disabled:opacity-60"
-                                        title="Guardar stock"
-                                      >
-                                        {savingStockByVariantId?.[id] ? "..." : "OK"}
-                                      </button>
-
-                                      {stockMsgByVariantId?.[id] ? (
-                                        <span
-                                          className={`text-[10px] font-extrabold ${stockMsgByVariantId[id] === "OK" ? "text-green-700" : "text-red-600"
-                                            }`}
-                                        >
-                                          {stockMsgByVariantId[id]}
-                                        </span>
-                                      ) : null}
+                                      {cost > 0 ? fmtEUR(cost) : <span className="text-ink-400">—</span>}
                                     </div>
 
                                     <div className="flex items-center justify-end">
@@ -2772,14 +2829,14 @@ export default function Index({ result }) {
               </details>
 
               <div className="mt-4 rounded-xl border border-ink-100 bg-white p-4 text-xs text-ink-600">
-                <b>Nota:</b> La selección de cajas y stock se usa al calcular. Si no seleccionas una caja, se usará el fallback de box_types.
+                <b>Nota:</b> Marca como <b>Disponible</b> las cajas que tengas en stock. Solo las cajas marcadas disponibles y seleccionadas con <b>Usar</b> se tendrán en cuenta al calcular.
               </div>
             </div>
 
             <div className="border-t border-ink-100 px-5 py-4">
               <div className="flex items-center justify-between">
                 <div className="text-xs text-ink-500">
-                  Cambios aquí afectan al cálculo de capas (si hay packaging seleccionado).
+                  Los cambios de disponibilidad se guardan inmediatamente.
                 </div>
 
                 <button
@@ -2840,11 +2897,10 @@ export default function Index({ result }) {
                 <div className="my-2 rounded-2xl ring-1 ring-ink-100 bg-white">
                   <div className="overflow-hidden rounded-2xl">
                     {/* Cabecera */}
-                    <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-center gap-2 bg-ink-50 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
+                    <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_52px] items-center gap-2 bg-ink-50 px-4 py-2 text-[11px] font-extrabold uppercase tracking-wide text-ink-600">
                       <div>Marca</div>
                       <div>Modelo</div>
                       <div className="text-right">Cantidad</div>
-                      <div className="text-center">Caja</div>
                       <div />
                     </div>
                   </div>
@@ -2887,7 +2943,7 @@ export default function Index({ result }) {
 
                         return (
                           <div key={idx} className="px-4 py-3">
-                            <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_140px_52px] items-start gap-2">
+                            <div className="grid grid-cols-[180px_minmax(320px,1fr)_120px_52px] items-start gap-2">
                               {/* Marca */}
                               <div>
                                 <select
@@ -2964,13 +3020,6 @@ export default function Index({ result }) {
                                 {errQty ? (
                                   <div className="mt-1 text-[10px] font-extrabold text-red-600">{errQty}</div>
                                 ) : null}
-                              </div>
-
-                              {/* Caja (UI placeholder) */}
-                              <div className="flex items-center justify-center">
-                                <div className="max-w-[140px] text-center text-[10px] font-semibold leading-snug text-ink-500">
-                                  Se selecciona en <b>Configurar cajas</b>
-                                </div>
                               </div>
 
                               {/* Eliminar */}
