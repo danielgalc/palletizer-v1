@@ -12,7 +12,7 @@ class PalletizationService
      * - luego portátiles
      * - luego minis (para rellenar huecos)
      */
-    private array $types = ['tower', 'laptop', 'mini_pc'];
+    private array $types = ['tower', 'tower_sff', 'laptop', 'mini_pc'];
 
     /**
      * Resuelve el id numérico del pallet_type.
@@ -262,11 +262,15 @@ class PalletizationService
                         'mix' => [
                             'a' => [
                                 'pallet_type_code' => $typeA->code,
+                                'pallet_type_name' => $typeA->name,
+                                'carrier_rate_name' => $this->getCarrierRateName($zoneId, $typeA, (int)($simA['pallet_count'] ?? 0), $carrierId),
                                 'pallet_count' => (int) ($simA['pallet_count'] ?? 0),
                                 'total' => $costA,
                             ],
                             'b' => [
                                 'pallet_type_code' => $typeB->code,
+                                'pallet_type_name' => $typeB->name,
+                                'carrier_rate_name' => $this->getCarrierRateName($zoneId, $typeB, (int)($simB['pallet_count'] ?? 0), $carrierId),
                                 'pallet_count' => (int) ($simB['pallet_count'] ?? 0),
                                 'total' => $costB,
                             ],
@@ -320,9 +324,10 @@ class PalletizationService
         ?int $limitPallets = null
     ): array {
         $remaining = [
-            'tower' => (int)($items['tower'] ?? 0),
-            'laptop' => (int)($items['laptop'] ?? 0),
-            'mini_pc' => (int)($items['mini_pc'] ?? 0),
+            'tower'     => (int)($items['tower'] ?? 0),
+            'tower_sff' => (int)($items['tower_sff'] ?? 0),
+            'laptop'    => (int)($items['laptop'] ?? 0),
+            'mini_pc'   => (int)($items['mini_pc'] ?? 0),
         ];
 
         // Si vienen lines, calculamos el peso por tipo a partir de device_models.weight_kg (fallback a box_types.weight_kg)
@@ -425,8 +430,9 @@ class PalletizationService
             ];
         }
 
-        // Validación mínima
+        // Validación mínima — solo para tipos con unidades pendientes de empaquetar
         foreach ($info as $code => $t) {
+            if (($remaining[$code] ?? 0) <= 0) continue; // tipo sin unidades: no necesita ser válido
             if ($t['per_layer'] <= 0 || $t['height_cm'] <= 0 || ($t['weight_g'] ?? 0) <= 0) {
                 return [
                     'pallet_count' => 0,
@@ -436,7 +442,7 @@ class PalletizationService
                         'info' => $info,
                     ],
                     'warnings' => [],
-                    'packed_items' => ['tower' => 0, 'laptop' => 0, 'mini_pc' => 0],
+                    'packed_items' => ['tower' => 0, 'tower_sff' => 0, 'laptop' => 0, 'mini_pc' => 0],
                     'remaining_items' => $remaining,
                     'limit_pallets' => $limitPallets,
                 ];
@@ -447,7 +453,7 @@ class PalletizationService
         $guard = 0;
 
         // Si limitPallets es null => hasta terminar; si no => máximo N pallets
-        while (($remaining['tower'] + $remaining['laptop'] + $remaining['mini_pc']) > 0) {
+        while (($remaining['tower'] + $remaining['tower_sff'] + $remaining['laptop'] + $remaining['mini_pc']) > 0) {
             if ($limitPallets !== null && count($pallets) >= $limitPallets) {
                 break;
             }
@@ -462,9 +468,10 @@ class PalletizationService
                 'weight_g' => 0,   // cálculo exacto
                 'weight_kg' => 0,  // derivado (para UI legacy)
                 'boxes' => [
-                    'tower' => 0,
-                    'laptop' => 0,
-                    'mini_pc' => 0,
+                    'tower'     => 0,
+                    'tower_sff' => 0,
+                    'laptop'    => 0,
+                    'mini_pc'   => 0,
                 ],
             ];
 
@@ -565,7 +572,7 @@ class PalletizationService
 
                 if ($pallet['height_cm'] >= $palletMaxH) break;
                 if ($pallet['weight_g'] >= $palletMaxG) break;
-                if (($remaining['tower'] + $remaining['laptop'] + $remaining['mini_pc']) <= 0) break;
+                if (($remaining['tower'] + $remaining['tower_sff'] + $remaining['laptop'] + $remaining['mini_pc']) <= 0) break;
             }
 
             $totalBoxes = array_sum($pallet['boxes']);
@@ -577,9 +584,10 @@ class PalletizationService
         }
 
         $packed = [
-            'tower' => (int)($items['tower'] ?? 0) - $remaining['tower'],
-            'laptop' => (int)($items['laptop'] ?? 0) - $remaining['laptop'],
-            'mini_pc' => (int)($items['mini_pc'] ?? 0) - $remaining['mini_pc'],
+            'tower'     => (int)($items['tower'] ?? 0)     - $remaining['tower'],
+            'tower_sff' => (int)($items['tower_sff'] ?? 0) - $remaining['tower_sff'],
+            'laptop'    => (int)($items['laptop'] ?? 0)    - $remaining['laptop'],
+            'mini_pc'   => (int)($items['mini_pc'] ?? 0)   - $remaining['mini_pc'],
         ];
 
         $warnings = [];
@@ -611,13 +619,18 @@ class PalletizationService
                 'H_cm' => $palletMaxH,
                 'max_kg' => $palletMaxKg,
                 'max_weight_g' => $palletMaxG,
-                'weight_g' => $info['tower']['weight_g'] ?? 0,
+                'weight_g' => $info['tower']['weight_g'] ?? ($info['tower_sff']['weight_g'] ?? 0),
             ],
             'per_type' => [
                 'tower' => [
                     'per_layer' => $info['tower']['per_layer'] ?? 0,
                     'height_cm' => $info['tower']['height_cm'] ?? 0,
                     'weight_kg' => $info['tower']['weight_kg'] ?? 0,
+                ],
+                'tower_sff' => [
+                    'per_layer' => $info['tower_sff']['per_layer'] ?? 0,
+                    'height_cm' => $info['tower_sff']['height_cm'] ?? 0,
+                    'weight_kg' => $info['tower_sff']['weight_kg'] ?? 0,
                 ],
                 'laptop' => [
                     'per_layer' => $info['laptop']['per_layer'] ?? 0,
@@ -785,7 +798,7 @@ class PalletizationService
         if (!is_array($pack) || empty($pack)) return $items;
 
         $wanted = [];
-        foreach (['tower', 'laptop', 'mini_pc'] as $k) {
+        foreach (['tower', 'tower_sff', 'laptop', 'mini_pc'] as $k) {
             $id = isset($pack[$k]) ? (int)$pack[$k] : 0;
             if ($id > 0) $wanted[$k] = $id;
         }
@@ -814,7 +827,7 @@ class PalletizationService
         $map = [];
         foreach ($rows as $r) {
             $kind = (string)($r->kind ?? '');
-            if (!in_array($kind, ['tower', 'laptop', 'mini_pc'], true)) continue;
+            if (!in_array($kind, ['tower', 'tower_sff', 'laptop', 'mini_pc'], true)) continue;
             if (!isset($wanted[$kind]) || (int)$wanted[$kind] !== (int)$r->id) continue;
             if (!(bool)$r->is_active) continue;
             $map[$kind] = $r;
@@ -829,9 +842,10 @@ class PalletizationService
     {
         // Unidades por tipo lógico (desde lines si vienen)
         $qty = [
-            'tower' => (int)($items['tower'] ?? 0),
-            'laptop' => (int)($items['laptop'] ?? 0),
-            'mini_pc' => (int)($items['mini_pc'] ?? 0),
+            'tower'     => (int)($items['tower'] ?? 0),
+            'tower_sff' => (int)($items['tower_sff'] ?? 0),
+            'laptop'    => (int)($items['laptop'] ?? 0),
+            'mini_pc'   => (int)($items['mini_pc'] ?? 0),
         ];
 
         if (!empty($items['lines']) && is_array($items['lines'])) {
@@ -849,7 +863,7 @@ class PalletizationService
                     ->select(['dm.id', 'bt.code as box_code'])
                     ->get();
 
-                $qty = ['tower' => 0, 'laptop' => 0, 'mini_pc' => 0];
+                $qty = ['tower' => 0, 'tower_sff' => 0, 'laptop' => 0, 'mini_pc' => 0];
                 foreach ($rows as $r) {
                     $code = (string)($r->box_code ?? '');
                     $id = (int)$r->id;
@@ -859,7 +873,15 @@ class PalletizationService
             }
         }
 
-        $packRequested = is_array($items['packaging'] ?? null) && count($items['packaging']) > 0;
+        // packRequested = true solo si al menos un tipo tiene un variant_id real (> 0).
+        // El frontend envía packaging: { tower: null, tower_sff: null, … } aunque no haya
+        // selección, por lo que count() > 0 siempre — no sirve como indicador.
+        $packRequested = false;
+        if (is_array($items['packaging'] ?? null)) {
+            foreach ($items['packaging'] as $v) {
+                if ($v !== null && (int)$v > 0) { $packRequested = true; break; }
+            }
+        }
         $variants = $items['_packaging_variants'] ?? [];
 
         $selected = [];
@@ -868,7 +890,7 @@ class PalletizationService
         $totalBoxCost = 0.0;
         $breakdown = [];
 
-        foreach (['tower', 'laptop', 'mini_pc'] as $kind) {
+        foreach (['tower', 'tower_sff', 'laptop', 'mini_pc'] as $kind) {
             $need = (int)($qty[$kind] ?? 0);
             $selId = isset($items['packaging'][$kind]) ? (int)$items['packaging'][$kind] : null;
             $v = $variants[$kind] ?? null;
@@ -883,8 +905,8 @@ class PalletizationService
                     continue;
                 }
                 if ((int)$v->on_hand_qty < $need) {
-                    $errors[] = "Stock insuficiente para {$kind}: necesitas {$need} y hay " . (int)$v->on_hand_qty . ".";
-                    continue;
+                    $warnings[] = "Stock bajo para {$kind}: necesitas {$need} y hay " . (int)$v->on_hand_qty . ".";
+                    // No bloqueamos — el stock registrado puede estar desactualizado
                 }
             }
 
@@ -925,5 +947,35 @@ class PalletizationService
             'warnings' => $warnings,
             'packaging_requested' => $packRequested,
         ];
+    }
+
+    /**
+     * Devuelve el carrier_rate_name para un tipo de pallet + zona + carrier.
+     * Usado para rellenar mix.a y mix.b con el nombre comercial de la tarifa.
+     */
+    private function getCarrierRateName(int $zoneId, object $palletType, int $palletCount, ?int $carrierId): ?string
+    {
+        if ($palletCount <= 0) return null;
+
+        $q = DB::table('rates')
+            ->where('zone_id', $zoneId)
+            ->where('pallet_type_id', $this->resolvePalletTypeId($palletType));
+
+        if ($carrierId !== null) $q->where('carrier_id', $carrierId);
+
+        $rate = $q->where('min_pallets', '<=', $palletCount)
+                  ->where('max_pallets', '>=', $palletCount)
+                  ->orderBy('min_pallets')
+                  ->first();
+
+        if (!$rate) {
+            $fb = DB::table('rates')
+                ->where('zone_id', $zoneId)
+                ->where('pallet_type_id', $this->resolvePalletTypeId($palletType));
+            if ($carrierId !== null) $fb->where('carrier_id', $carrierId);
+            $rate = $fb->orderByDesc('max_pallets')->first();
+        }
+
+        return $rate->carrier_rate_name ?? null;
     }
 }

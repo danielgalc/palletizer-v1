@@ -49,7 +49,7 @@ class BoxVariantController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'kind' => ['required', Rule::in(['laptop', 'tower', 'mini_pc'])],
+            'kind' => ['required', Rule::in(['laptop', 'tower', 'tower_sff', 'mini_pc'])],
             'condition' => ['required', Rule::in(['reused', 'new'])],
             'provider_id' => ['required', 'integer', 'exists:box_providers,id'],
             'length_cm' => ['required', 'integer', 'min:1'],
@@ -88,7 +88,7 @@ class BoxVariantController extends Controller
     public function update(Request $request, int $id)
     {
         $data = $request->validate([
-            'kind' => ['required', Rule::in(['laptop', 'tower', 'mini_pc'])],
+            'kind' => ['required', Rule::in(['laptop', 'tower', 'tower_sff', 'mini_pc'])],
             'condition' => ['required', Rule::in(['reused', 'new'])],
             'provider_id' => ['required', 'integer', 'exists:box_providers,id'],
             'length_cm' => ['required', 'integer', 'min:1'],

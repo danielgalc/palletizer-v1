@@ -338,12 +338,13 @@ export default function Index({ result }) {
     // Se mantiene mientras espera equipos
     mini_pc: 0,
     tower: 0,
+    tower_sff: 0,
     laptop: 0,
 
     allow_separators: true,
 
     // Selección de cajas por tipo lógico (box_variants)
-    packaging: { tower: null, laptop: null, mini_pc: null },
+    packaging: { tower: null, tower_sff: null, laptop: null, mini_pc: null },
 
     carrier_mode: "auto", // auto | manual
     carrier_ids: [],
@@ -429,9 +430,10 @@ export default function Index({ result }) {
 
   // Filtros por tipo (kind): condición + proveedor
   const [packFilters, setPackFilters] = useState({
-    tower: { condition: "", provider_id: null },
-    laptop: { condition: "", provider_id: null },
-    mini_pc: { condition: "", provider_id: null },
+    tower:     { condition: "", provider_id: null },
+    tower_sff: { condition: "", provider_id: null },
+    laptop:    { condition: "", provider_id: null },
+    mini_pc:   { condition: "", provider_id: null },
   });
 
   // Estado de guardado/disponibilidad por variante
@@ -581,7 +583,7 @@ export default function Index({ result }) {
   const selectPackagingVariant = (kind, variantId) => {
     const id = variantId ? Number(variantId) : null;
     setData("packaging", {
-      ...(data.packaging || { tower: null, laptop: null, mini_pc: null }),
+      ...(data.packaging || { tower: null, tower_sff: null, laptop: null, mini_pc: null }),
       [kind]: Number.isFinite(id) ? id : null,
     });
   };
@@ -1002,33 +1004,7 @@ export default function Index({ result }) {
 
 
 
-  // Modelos useEffect
-  useEffect(() => {
-    let cancelled = false;
 
-    setLoadingDeviceModels(true);
-    setDeviceModelsError(null);
-
-    fetch("/api/device-models?only_active=1")
-      .then((r) => {
-        if (!r.ok) throw new Error("No se pudieron cargar los modelos");
-        return r.json();
-      })
-      .then((list) => {
-        if (cancelled) return;
-        setDeviceModels(Array.isArray(list) ? list : []);
-        setLoadingDeviceModels(false);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setLoadingDeviceModels(false);
-        setDeviceModelsError(e.message || "Error cargando modelos");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const addLine = () => {
     const next = Array.isArray(data.lines) ? [...data.lines] : [];
@@ -1300,7 +1276,7 @@ export default function Index({ result }) {
     };
   }, []);
 
-  // Fetch de modelos/equipos
+  // Fetch de modelos/equipos — box_type viene como string JSON de json_build_object (PostgreSQL)
   useEffect(() => {
     let cancelled = false;
 
@@ -1314,7 +1290,13 @@ export default function Index({ result }) {
       })
       .then((list) => {
         if (cancelled) return;
-        setDeviceModels(Array.isArray(list) ? list : []);
+        const parsed = (Array.isArray(list) ? list : []).map((m) => ({
+          ...m,
+          box_type: typeof m.box_type === "string"
+            ? (() => { try { return JSON.parse(m.box_type); } catch { return null; } })()
+            : (m.box_type ?? null),
+        }));
+        setDeviceModels(parsed);
         setLoadingDeviceModels(false);
       })
       .catch((e) => {
@@ -1328,27 +1310,29 @@ export default function Index({ result }) {
     };
   }, []);
 
-  // Mantener legacy mini_pc/tower/laptop sincronizado con las líneas (para export / compat) REVISAR
-  useEffect(() => {
-    const totals = { mini_pc: 0, tower: 0, laptop: 0 };
-
-
+  // Totales por tipo derivados de lines + deviceModelsById (reactivo, sin delay de useEffect)
+  const linesTotals = useMemo(() => {
+    const totals = { mini_pc: 0, tower: 0, tower_sff: 0, laptop: 0 };
     const lines = Array.isArray(data.lines) ? data.lines : [];
     for (const line of lines) {
       const id = line?.device_model_id;
       const qty = Number(line?.qty ?? 0);
       if (!id || !Number.isFinite(qty) || qty <= 0) continue;
-
       const dm = deviceModelsById.get(Number(id));
-      const code = dm?.box_type?.code; // debe venir desde /api/device-models (json_build_object)
+      const code = dm?.box_type?.code;
       if (code && code in totals) totals[code] += qty;
     }
-
-    if (Number(data.mini_pc) !== totals.mini_pc) setData("mini_pc", totals.mini_pc);
-    if (Number(data.tower) !== totals.tower) setData("tower", totals.tower);
-    if (Number(data.laptop) !== totals.laptop) setData("laptop", totals.laptop);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return totals;
   }, [data.lines, deviceModelsById]);
+
+  // Mantener legacy mini_pc/tower/tower_sff/laptop sincronizado (para backend submit y export)
+  useEffect(() => {
+    if (Number(data.mini_pc)   !== linesTotals.mini_pc)   setData("mini_pc",   linesTotals.mini_pc);
+    if (Number(data.tower)     !== linesTotals.tower)     setData("tower",     linesTotals.tower);
+    if (Number(data.tower_sff ?? 0) !== linesTotals.tower_sff) setData("tower_sff", linesTotals.tower_sff);
+    if (Number(data.laptop)    !== linesTotals.laptop)    setData("laptop",    linesTotals.laptop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linesTotals]);
 
   const linesSummary = useMemo(() => {
     const lines = Array.isArray(data.lines) ? data.lines : [];
@@ -1816,9 +1800,10 @@ export default function Index({ result }) {
 
                 {(() => {
                   const kinds = [
-                    { kind: "tower", label: "Torres" },
-                    { kind: "laptop", label: "Portátiles" },
-                    { kind: "mini_pc", label: "Mini PCs" },
+                    { kind: "tower",     label: "Torres MT"  },
+                    { kind: "tower_sff", label: "Torres SFF" },
+                    { kind: "laptop",    label: "Portátiles" },
+                    { kind: "mini_pc",   label: "Mini PCs"   },
                   ];
 
                   const selectedAny = kinds.some(({ kind }) => {
@@ -1914,13 +1899,16 @@ export default function Index({ result }) {
                 {/* Chips compactos (opcional) */}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
-                    Mini: {Number(data.mini_pc ?? 0)}
+                    Mini: {linesTotals.mini_pc}
                   </span>
                   <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
-                    Torres: {Number(data.tower ?? 0)}
+                    SFF: {linesTotals.tower_sff}
                   </span>
                   <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
-                    Portátiles: {Number(data.laptop ?? 0)}
+                    Torres: {linesTotals.tower}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Portátiles: {linesTotals.laptop}
                   </span>
                 </div>
 
@@ -2564,9 +2552,10 @@ export default function Index({ result }) {
               ) : (
                 <div className="grid gap-4">
                   {[
-                    { kind: "laptop", title: "Portátiles" },
-                    { kind: "tower", title: "Torres" },
-                    { kind: "mini_pc", title: "Mini PCs" },
+                    { kind: "laptop",    title: "Portátiles" },
+                    { kind: "mini_pc",   title: "Mini PCs"   },
+                    { kind: "tower_sff", title: "Torres SFF" },
+                    { kind: "tower",     title: "Torres MT"  },
                   ].map(({ kind, title }) => {
                     const selectedId = data?.packaging?.[kind] ? Number(data.packaging[kind]) : null;
                     const condition = packFilters?.[kind]?.condition ?? "reused";
@@ -2989,7 +2978,7 @@ export default function Index({ result }) {
                                 />
 
                                 {/* hint */}
-                                <div className="mt-1 flex items-center justify-between gap-2">
+                                {/*<div className="mt-1 flex items-center justify-between gap-2">
                                   {boxCode ? (
                                     <span className="inline-flex items-center rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-extrabold text-ink-700 ring-1 ring-ink-100">
                                       Caja: {boxCode}
@@ -2999,7 +2988,7 @@ export default function Index({ result }) {
                                   {errModel ? (
                                     <span className="text-[10px] font-extrabold text-red-600">{errModel}</span>
                                   ) : null}
-                                </div>
+                                </div>*/}
 
                                 {/* Dropdown filtrado (portal) */}
                               </div>
@@ -3047,18 +3036,21 @@ export default function Index({ result }) {
             <div className="border-t border-ink-100 px-5 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-xs text-ink-500">
-                  Cambios aquí afectan al cálculo (se sincroniza con mini/torre/portátil mientras el service sea legacy).
+                  Total de equipos reconocidos por tipo de caja.
                 </div>
 
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center rounded-full bg-ink-50 px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
-                    Mini: {Number(data.mini_pc ?? 0)}
+                    Mini: {linesTotals.mini_pc}
                   </span>
                   <span className="inline-flex items-center rounded-full bg-ink-50 px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
-                    Torres: {Number(data.tower ?? 0)}
+                    SFF: {linesTotals.tower_sff}
                   </span>
                   <span className="inline-flex items-center rounded-full bg-ink-50 px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
-                    Portátiles: {Number(data.laptop ?? 0)}
+                    Torres: {linesTotals.tower}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-ink-50 px-3 py-1 text-xs font-extrabold text-ink-700 ring-1 ring-ink-100">
+                    Portátiles: {linesTotals.laptop}
                   </span>
                 </div>
               </div>

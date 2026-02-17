@@ -30,14 +30,16 @@ class PalletizerController extends Controller
             'lines.*.qty' => ['nullable', 'integer', 'min:0'],
 
             'packaging' => ['nullable', 'array'],
-            'packaging.tower' => ['nullable', 'integer', 'exists:box_variants,id'],
-            'packaging.laptop' => ['nullable', 'integer', 'exists:box_variants,id'],
-            'packaging.mini_pc' => ['nullable', 'integer', 'exists:box_variants,id'],
+            'packaging.tower'     => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.tower_sff' => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.laptop'    => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.mini_pc'   => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
 
 
-            'mini_pc'  => ['required', 'integer', 'min:0'],
-            'tower'    => ['required', 'integer', 'min:0'],
-            'laptop'   => ['required', 'integer', 'min:0'],
+            'mini_pc'    => ['required', 'integer', 'min:0'],
+            'tower'      => ['required', 'integer', 'min:0'],
+            'tower_sff'  => ['required', 'integer', 'min:0'],
+            'laptop'     => ['required', 'integer', 'min:0'],
 
             'carrier_mode' => ['required', 'in:auto,manual'],
             'carrier_ids' => ['nullable', 'array'],
@@ -146,7 +148,7 @@ class PalletizerController extends Controller
                 $boxByModelId[(int)$r->id] = (string)$r->box_code;
             }
 
-            $totals = ['mini_pc' => 0, 'tower' => 0, 'laptop' => 0];
+            $totals = ['mini_pc' => 0, 'tower' => 0, 'tower_sff' => 0, 'laptop' => 0];
 
             foreach ($lines as $i => $line) {
                 $qty = (int) ($line['qty'] ?? 0);
@@ -161,10 +163,10 @@ class PalletizerController extends Controller
                     ]);
                 }
 
-                // Mientras el service sea legacy, solo aceptamos estos 3 códigos
+                // Mientras el service sea legacy, solo aceptamos estos 4 códigos
                 if (!array_key_exists($code, $totals)) {
                     return back()->withErrors([
-                        "lines.$i.device_model_id" => "El tipo de caja '{$code}' no está soportado todavía en el cálculo (solo mini_pc, tower, laptop).",
+                        "lines.$i.device_model_id" => "El tipo de caja '{$code}' no está soportado todavía en el cálculo (solo mini_pc, tower, tower_sff, laptop).",
                     ]);
                 }
 
@@ -172,16 +174,18 @@ class PalletizerController extends Controller
             }
 
             // Sobrescribir valores legacy para que el cálculo siga funcionando
-            $data['mini_pc'] = $totals['mini_pc'];
-            $data['tower']   = $totals['tower'];
-            $data['laptop']  = $totals['laptop'];
+            $data['mini_pc']   = $totals['mini_pc'];
+            $data['tower']     = $totals['tower'];
+            $data['tower_sff'] = $totals['tower_sff'];
+            $data['laptop']    = $totals['laptop'];
         }
 
 
         $items = [
-            'mini_pc' => (int) $data['mini_pc'],
-            'tower'   => (int) $data['tower'],
-            'laptop'  => (int) $data['laptop'],
+            'mini_pc'   => (int) $data['mini_pc'],
+            'tower'     => (int) $data['tower'],
+            'tower_sff' => (int) ($data['tower_sff'] ?? 0),
+            'laptop'    => (int) $data['laptop'],
         ];
 
         // Pasamos también lines al service (si vienen) para que pueda usar pesos de device_models
