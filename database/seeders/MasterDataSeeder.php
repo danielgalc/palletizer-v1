@@ -214,14 +214,10 @@ class MasterDataSeeder extends Seeder
             $pid = $providerId($v['prov']);
             if (!$pid) continue;
 
-            $existingId = DB::table('box_variants')
-                ->where('kind', $v['kind'])
-                ->where('condition', $v['cond'])
-                ->where('provider_id', $pid)
-                ->value('id');
+            $defaultStock = ($v['cond'] === 'reused') ? 9999 : 0;
 
-            if (!$existingId) {
-                $existingId = DB::table('box_variants')->insertGetId([
+            DB::table('box_variants')->upsert([
+                [
                     'kind'          => $v['kind'],
                     'condition'     => $v['cond'],
                     'provider_id'   => $pid,
@@ -229,28 +225,12 @@ class MasterDataSeeder extends Seeder
                     'width_cm'      => $v['w'],
                     'height_cm'     => $v['h'],
                     'unit_cost_eur' => $v['cost'],
+                    'on_hand_qty'   => $defaultStock,
                     'is_active'     => true,
                     'created_at'    => now(),
                     'updated_at'    => now(),
-                ]);
-            } else {
-                DB::table('box_variants')->where('id', $existingId)->update([
-                    'length_cm'     => $v['l'],
-                    'width_cm'      => $v['w'],
-                    'height_cm'     => $v['h'],
-                    'unit_cost_eur' => $v['cost'],
-                    'is_active'     => true,
-                    'updated_at'    => now(),
-                ]);
-            }
-
-            // Reutilizadas: stock alto (cajas ya disponibles en almacén)
-            // Nuevas: 0 por defecto (hay que hacer pedido)
-            $defaultStock = ($v['cond'] === 'reused') ? 9999 : 0;
-            DB::table('box_variant_stocks')->updateOrInsert(
-                ['box_variant_id' => $existingId],
-                ['on_hand_qty' => $defaultStock, 'created_at' => now(), 'updated_at' => now()]
-            );
+                ],
+            ], ['kind', 'condition', 'provider_id'], ['length_cm', 'width_cm', 'height_cm', 'unit_cost_eur', 'on_hand_qty', 'is_active', 'updated_at']);
         }
 
         // ─────────────────────────────────────────────────────────────────────

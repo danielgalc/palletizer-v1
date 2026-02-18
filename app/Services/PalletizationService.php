@@ -806,7 +806,6 @@ class PalletizationService
 
         $rows = DB::table('box_variants as bv')
             ->join('box_providers as bp', 'bp.id', '=', 'bv.provider_id')
-            ->leftJoin('box_variant_stocks as bvs', 'bvs.box_variant_id', '=', 'bv.id')
             ->whereIn('bv.id', array_values($wanted))
             ->select([
                 'bv.id',
@@ -819,8 +818,8 @@ class PalletizationService
                 'bv.width_cm',
                 'bv.height_cm',
                 'bv.unit_cost_eur',
+                'bv.on_hand_qty',
                 'bv.is_active',
-                DB::raw('COALESCE(bvs.on_hand_qty, 0) as on_hand_qty'),
             ])
             ->get();
 

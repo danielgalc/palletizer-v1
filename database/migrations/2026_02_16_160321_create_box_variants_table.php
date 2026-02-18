@@ -10,9 +10,8 @@ return new class extends Migration {
         Schema::create('box_variants', function (Blueprint $table) {
             $table->id();
 
-            // kind lógico (3 tipos)
-            $table->string('kind', 32);        // laptop|tower|mini_pc
-            $table->string('condition', 16);   // reused|new
+            $table->string('kind', 32);       // laptop|tower|tower_sff|mini_pc
+            $table->string('condition', 16);  // reused|new
 
             $table->foreignId('provider_id')->constrained('box_providers')->cascadeOnDelete();
 
@@ -20,17 +19,18 @@ return new class extends Migration {
             $table->unsignedInteger('width_cm');
             $table->unsignedInteger('height_cm');
 
-            // peso de la caja (si aplica). No es el peso del equipo.
-            $table->decimal('weight_kg', 8, 3)->default(0);
-
-            // coste unitario de la caja (EUR). reutilizadas normalmente 0.
             $table->decimal('unit_cost_eur', 10, 4)->default(0);
+
+            // Stock consolidado aquí directamente (relación 1:1 con stock no justifica tabla aparte)
+            // Reutilizadas: valor alto (ej. 9999). Nuevas: 0 hasta hacer pedido al proveedor.
+            $table->unsignedInteger('on_hand_qty')->default(0);
 
             $table->boolean('is_active')->default(true);
             $table->timestamps();
 
             $table->index(['kind', 'condition']);
             $table->index('provider_id');
+            $table->unique(['kind', 'condition', 'provider_id']);
         });
     }
 
