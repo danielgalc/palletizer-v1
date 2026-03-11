@@ -2192,7 +2192,7 @@ export default function Index({ result }) {
                                     layer?.count !== undefined && layer?.type
                                       ? Number(layer.count)
                                       : Number(counts?.[base] ?? 0);
-                                      
+
                                   // Separador de seguridad — renderizado propio, no como capa normal
                                   if (layer?.security_separator) {
                                     return (
@@ -2366,6 +2366,34 @@ export default function Index({ result }) {
                         ) : null}
                       </div>
                     )}
+
+                                  {/* EQUIPOS EN VERTICAL */}
+                                  {metrics?.vertical_total > 0 && (() => {
+                                    const typeLabels = { tower: "Torres MT", tower_sff: "Torres SFF", laptop: "Portátiles", mini_pc: "Mini PCs" };
+                                    const vt = metrics.vertical_totals ?? {};
+                                    const entries = Object.entries(vt).filter(([, n]) => Number(n) > 0);
+                                    return (
+                                      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm font-extrabold text-blue-900">↕ Equipos colocados en vertical</span>
+                                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
+                                            {fmtNum(metrics.vertical_total)} en total
+                                          </span>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-3">
+                                          {entries.map(([code, count]) => (
+                                            <div key={code} className="flex flex-col items-center rounded-lg bg-white px-4 py-2 ring-1 ring-blue-200">
+                                              <span className="text-xs text-blue-500">{typeLabels[code] ?? code}</span>
+                                              <span className="text-lg font-extrabold text-blue-800">{fmtNum(count)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <p className="mt-3 text-xs text-blue-600">
+                                          Unidades aprovechadas en el hueco lateral del pallet colocándolas de canto (en vertical).
+                                        </p>
+                                      </div>
+                                    );
+                                  })()}
                   </div>
                 </details>
               )}

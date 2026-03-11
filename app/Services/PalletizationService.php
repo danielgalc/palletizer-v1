@@ -865,6 +865,22 @@ class PalletizationService
             }
         }
 
+        // Agregar cajas colocadas en vertical por tipo a lo largo de todos los pallets
+        $verticalTotals = ['tower' => 0, 'tower_sff' => 0, 'laptop' => 0, 'mini_pc' => 0];
+        foreach ($pallets as $p) {
+            foreach ($p['layers'] as $lay) {
+                if (!empty($lay['vertical'])) {
+                    foreach ($lay['vertical'] as $v) {
+                        $vt = $v['type'] ?? null;
+                        if ($vt !== null && array_key_exists($vt, $verticalTotals)) {
+                            $verticalTotals[$vt] += (int)($v['count'] ?? 0);
+                        }
+                    }
+                }
+            }
+        }
+        $verticalTotal = array_sum($verticalTotals);
+
         $metrics = [
             'pallet' => [
                 'L_cm' => $palletL,
@@ -874,6 +890,8 @@ class PalletizationService
                 'max_weight_g' => $palletMaxG,
                 'weight_g' => $info['tower']['weight_g'] ?? ($info['tower_sff']['weight_g'] ?? 0),
             ],
+            'vertical_totals' => $verticalTotals,
+            'vertical_total'  => $verticalTotal,
             'per_type' => [
                 'tower' => [
                     'per_layer' => $info['tower']['per_layer'] ?? 0,
