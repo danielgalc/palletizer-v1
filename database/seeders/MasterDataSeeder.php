@@ -15,11 +15,11 @@ class MasterDataSeeder extends Seeder
         // tower     = Mid-Tower / Tower clásico vertical grande
         // ─────────────────────────────────────────────────────────────────────
         DB::table('box_types')->upsert([
-            ['code' => 'laptop',    'name' => 'Portátil',         'length_cm' => 40, 'width_cm' => 30, 'height_cm' => 12, 'weight_kg' => 4.50, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'mini_pc',   'name' => 'Mini PC (Tiny)',    'length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'weight_kg' => 3.20, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'tower_sff', 'name' => 'Torre SFF/Slim',    'length_cm' => 45, 'width_cm' => 28, 'height_cm' => 38, 'weight_kg' => 8.00, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'tower',     'name' => 'Torre (MT/Tower)',  'length_cm' => 60, 'width_cm' => 35, 'height_cm' => 50, 'weight_kg' => 10.00, 'created_at' => now(), 'updated_at' => now()],
-        ], ['code'], ['name', 'length_cm', 'width_cm', 'height_cm', 'weight_kg', 'updated_at']);
+            ['code' => 'laptop',    'name' => 'Portátil',         'length_cm' => 40, 'width_cm' => 30, 'height_cm' => 12, 'weight_kg' => 4.50,  'security_separator_every_n_layers' => 7, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'mini_pc',   'name' => 'Mini PC (Tiny)',    'length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'weight_kg' => 3.20,  'security_separator_every_n_layers' => 5, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'tower_sff', 'name' => 'Torre SFF/Slim',    'length_cm' => 45, 'width_cm' => 28, 'height_cm' => 38, 'weight_kg' => 8.00,  'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'tower',     'name' => 'Torre (MT/Tower)',  'length_cm' => 60, 'width_cm' => 35, 'height_cm' => 50, 'weight_kg' => 10.00, 'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
+        ], ['code'], ['name', 'length_cm', 'width_cm', 'height_cm', 'weight_kg', 'security_separator_every_n_layers', 'updated_at']);
 
         $boxTypeId = fn(string $code) => DB::table('box_types')->where('code', $code)->value('id');
 

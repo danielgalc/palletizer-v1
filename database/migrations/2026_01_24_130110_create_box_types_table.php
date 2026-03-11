@@ -16,14 +16,17 @@ return new class extends Migration {
             $table->unsignedSmallInteger('width_cm');
             $table->unsignedSmallInteger('height_cm');
             $table->decimal('weight_kg', 6, 2); // peso de fallback (equipo + caja, sin líneas de modelos)
+            // Cada cuántas capas se coloca un separador de seguridad para estabilizar el pallet.
+            // null = sin separador de seguridad para este tipo.
+            $table->unsignedSmallInteger('security_separator_every_n_layers')->nullable();
             $table->timestamps();
         });
 
         DB::table('box_types')->insert([
-            ['code' => 'laptop',    'name' => 'Portátil',        'length_cm' => 40, 'width_cm' => 30, 'height_cm' => 12, 'weight_kg' => 4.50,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'mini_pc',   'name' => 'Mini PC (Tiny)',   'length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'weight_kg' => 3.20,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'tower_sff', 'name' => 'Torre SFF/Slim',   'length_cm' => 45, 'width_cm' => 28, 'height_cm' => 38, 'weight_kg' => 8.00,  'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'tower',     'name' => 'Torre (MT/Tower)', 'length_cm' => 60, 'width_cm' => 35, 'height_cm' => 50, 'weight_kg' => 10.00, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'laptop',    'name' => 'Portátil',        'length_cm' => 40, 'width_cm' => 30, 'height_cm' => 12, 'weight_kg' => 4.50,  'security_separator_every_n_layers' => 7, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'mini_pc',   'name' => 'Mini PC (Tiny)',   'length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'weight_kg' => 3.20,  'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'tower_sff', 'name' => 'Torre SFF/Slim',   'length_cm' => 45, 'width_cm' => 28, 'height_cm' => 38, 'weight_kg' => 8.00,  'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'tower',     'name' => 'Torre (MT/Tower)', 'length_cm' => 60, 'width_cm' => 35, 'height_cm' => 50, 'weight_kg' => 10.00, 'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
         ]);
     }
 

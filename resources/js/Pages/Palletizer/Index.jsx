@@ -196,13 +196,14 @@ function getLayerCounts(layer) {
   if (layer?.counts && typeof layer.counts === "object") {
     return {
       tower: Number(layer.counts.tower ?? 0),
+      tower_sff: Number(layer.counts.tower_sff ?? 0),
       laptop: Number(layer.counts.laptop ?? 0),
       mini_pc: Number(layer.counts.mini_pc ?? 0),
     };
   }
 
-  // Nuevo: {type,count} + mixed:[{type,count}]
-  const counts = { tower: 0, laptop: 0, mini_pc: 0 };
+  // Nuevo: {type,count} + mixed:[{type,count}] + vertical:[{type,count}]
+  const counts = { tower: 0, tower_sff: 0, laptop: 0, mini_pc: 0 };
 
   const t = layer?.type;
   const c = Number(layer?.count ?? 0);
@@ -213,6 +214,15 @@ function getLayerCounts(layer) {
       const mt = m?.type;
       const mc = Number(m?.count ?? 0);
       if (mt && mt in counts) counts[mt] += mc;
+    }
+  }
+
+  // Cajas verticales — se suman al total por tipo
+  if (Array.isArray(layer?.vertical)) {
+    for (const v of layer.vertical) {
+      const vt = v?.type;
+      const vc = Number(v?.count ?? 0);
+      if (vt && vt in counts) counts[vt] += vc;
     }
   }
 
@@ -2182,6 +2192,19 @@ export default function Index({ result }) {
                                     layer?.count !== undefined && layer?.type
                                       ? Number(layer.count)
                                       : Number(counts?.[base] ?? 0);
+                                      
+                                  // Separador de seguridad — renderizado propio, no como capa normal
+                                  if (layer?.security_separator) {
+                                    return (
+                                      <div key={i} className="flex items-center gap-2 py-1">
+                                        <div className="h-px flex-1 border-t-2 border-dashed border-amber-400" />
+                                        <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-300">
+                                          ═ separador de seguridad ═
+                                        </span>
+                                        <div className="h-px flex-1 border-t-2 border-dashed border-amber-400" />
+                                      </div>
+                                    );
+                                  }
 
                                   return (
                                     <div key={i} className="rounded-lg bg-white p-3 ring-1 ring-ink-100">
@@ -2211,9 +2234,31 @@ export default function Index({ result }) {
                                       </div>
 
                                       <div className="mt-1 text-sm text-ink-800">
-                                        Torres: <b>{fmtNum(counts.tower)}</b> · Portátiles: <b>{fmtNum(counts.laptop)}</b> · Minis:{" "}
+                                        Torres: <b>{fmtNum(counts.tower)}</b> · SFF: <b>{fmtNum(counts.tower_sff)}</b> · Portátiles: <b>{fmtNum(counts.laptop)}</b> · Minis:{" "}
                                         <b>{fmtNum(counts.mini_pc)}</b>
                                       </div>
+
+                                      {/* Cajas verticales en el hueco lateral */}
+                                      {Array.isArray(layer?.vertical) && layer.vertical.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                          <span className="text-xs font-semibold text-ink-400 self-center">↕ vertical:</span>
+                                          {layer.vertical.map((v, vi) => {
+                                            const typeLabels = { tower: "Torre MT", tower_sff: "Torre SFF", laptop: "Portátil", mini_pc: "Mini PC" };
+                                            const label = typeLabels[v.type] ?? v.type;
+                                            return (
+                                              <span
+                                                key={vi}
+                                                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 ring-1 ring-blue-200"
+                                              >
+                                                ↕ {fmtNum(v.count)}× {label}
+                                                {v.vert_height_cm ? (
+                                                  <span className="font-normal text-blue-500">({v.vert_height_cm} cm alt.)</span>
+                                                ) : null}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}

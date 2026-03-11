@@ -150,7 +150,7 @@ class PalletizationService
             }
 
             if (!$rate) {
-                continue; // evita el crash
+                continue; // 👈 evita el crash
             }
 
             $pricePerPallet = (float) $rate->price_eur;
@@ -308,12 +308,159 @@ class PalletizationService
 
     private function boxesPerLayer(int $palletL, int $palletW, int $boxL, int $boxW): int
     {
-        if ($boxL <= 0 || $boxW <= 0) return 0;
+        return $this->boxesPerLayerDetail($palletL, $palletW, $boxL, $boxW)['count'];
+    }
 
-        $a = (int) floor($palletL / $boxL) * (int) floor($palletW / $boxW);
-        $b = (int) floor($palletL / $boxW) * (int) floor($palletW / $boxL);
+    /**
+     * Igual que boxesPerLayer pero devuelve además la geometría de la distribución óptima:
+     * - count:    número de cajas horizontales que caben
+     * - cols/rows: columnas y filas en la orientación ganadora
+     * - used_L/used_W: espacio ocupado por las cajas horizontales (cm)
+     * - gap_L/gap_W:   hueco sobrante en cada eje (cm)
+     * - box_L/box_W:   dimensiones de la caja en la orientación ganadora
+     */
+    private function boxesPerLayerDetail(int $palletL, int $palletW, int $boxL, int $boxW): array
+    {
+        if ($boxL <= 0 || $boxW <= 0) {
+            return ['count'=>0,'cols'=>0,'rows'=>0,'used_L'=>0,'used_W'=>0,'gap_L'=>$palletL,'gap_W'=>$palletW,'box_L'=>$boxL,'box_W'=>$boxW];
+        }
 
-        return max($a, $b);
+        // Orientación A: caja tal cual (L×W)
+        $colsA = (int) floor($palletL / $boxL);
+        $rowsA = (int) floor($palletW / $boxW);
+        $countA = $colsA * $rowsA;
+
+        // Orientación B: caja girada 90° (W×L)
+        $colsB = (int) floor($palletL / $boxW);
+        $rowsB = (int) floor($palletW / $boxL);
+        $countB = $colsB * $rowsB;
+
+        if ($countB > $countA) {
+            // Ganó orientación B (girada)
+            $usedL = $colsB * $boxW;
+            $usedW = $rowsB * $boxL;
+            return [
+                'count'  => $countB,
+                'cols'   => $colsB,
+                'rows'   => $rowsB,
+                'used_L' => $usedL,
+                'used_W' => $usedW,
+                'gap_L'  => $palletL - $usedL,
+                'gap_W'  => $palletW - $usedW,
+                'box_L'  => $boxW,   // dimensión que ocupa el eje L del pallet
+                'box_W'  => $boxL,   // dimensión que ocupa el eje W del pallet
+            ];
+        }
+
+        // Ganó orientación A (normal)
+        $usedL = $colsA * $boxL;
+        $usedW = $rowsA * $boxW;
+        return [
+            'count'  => $countA,
+            'cols'   => $colsA,
+            'rows'   => $rowsA,
+            'used_L' => $usedL,
+            'used_W' => $usedW,
+            'gap_L'  => $palletL - $usedL,
+            'gap_W'  => $palletW - $usedW,
+            'box_L'  => $boxL,
+            'box_W'  => $boxW,
+        ];
+    }
+
+    /**
+     * Calcula cuántas cajas de un tipo dado caben en vertical dentro de un hueco lateral.
+     *
+     * Una caja en vertical se apoya sobre su cara L×H (la más estrecha pasa al eje del hueco):
+     *   - Huella en el hueco: height_cm (nuevo ancho) × length_cm (nuevo largo)
+     *   - Nueva altura que añade al pallet: width_cm
+     *
+     * El hueco puede ser:
+     *   - Franja lateral (gap_W > 0): ancho disponible = gap_W, largo disponible = palletL
+     *   - Franja frontal (gap_L > 0): ancho disponible = gap_L, largo disponible = palletW
+     *
+     * Devuelve array de candidatos verticales ordenados por cantidad descendente:
+     *   [['type'=>code, 'count'=>N, 'vert_height_cm'=>M, 'in_gap'=>'W'|'L'], ...]
+     */
+    private function calcVerticalFill(
+        int $palletL,
+        int $palletW,
+        array $layerDetail,   // resultado de boxesPerLayerDetail para la capa principal
+        array $info,          // $info completo con dimensiones por tipo
+        array $remaining,     // unidades pendientes por tipo
+        int $remainingWeightG // peso disponible en el pallet antes de estas cajas verticales
+    ): array
+    {
+        $results = [];
+
+        // Dos huecos posibles tras colocar las cajas horizontales:
+        // gap_W: franja a lo largo del eje L, con ancho = gap_W cm
+        // gap_L: franja a lo largo del eje W, con ancho = gap_L cm
+        $gaps = [];
+        if ($layerDetail['gap_W'] > 0) {
+            $gaps[] = ['available_narrow' => $layerDetail['gap_W'], 'available_long' => $palletL];
+        }
+        if ($layerDetail['gap_L'] > 0) {
+            $gaps[] = ['available_narrow' => $layerDetail['gap_L'], 'available_long' => $palletW];
+        }
+
+        if (empty($gaps)) return [];
+
+        foreach ($this->types as $code) {
+            if (($remaining[$code] ?? 0) <= 0) continue;
+            if (!isset($info[$code])) continue;
+
+            $boxLen = (int)($info[$code]['box_L'] ?? 0);  // dimensión larga de la caja horizontal
+            $boxWid = (int)($info[$code]['box_W'] ?? 0);  // dimensión corta de la caja horizontal
+            $boxHei = (int)($info[$code]['height_cm']);    // altura de la caja horizontal = nueva profundidad vertical
+
+            if ($boxHei <= 0 || $boxLen <= 0) continue;
+
+            // Altura que añade la caja en vertical = boxWid (la que antes era el ancho de apilado)
+            $vertHeight = $boxWid;
+            if ($vertHeight <= 0) continue;
+
+            $totalVertical = 0;
+
+            foreach ($gaps as $gap) {
+                // La caja vertical necesita 'boxHei' cm en el eje estrecho del hueco
+                if ($boxHei > $gap['available_narrow']) continue;
+
+                // Cuántas columnas de cajas verticales caben en el eje estrecho
+                $vertCols = (int) floor($gap['available_narrow'] / $boxHei);
+                if ($vertCols <= 0) continue;
+
+                // Cuántas cajas por columna (a lo largo del eje largo del hueco)
+                // La caja vertical ocupa boxLen cm a lo largo
+                $vertRows = (int) floor($gap['available_long'] / $boxLen);
+                if ($vertRows <= 0) continue;
+
+                $totalVertical += $vertCols * $vertRows;
+            }
+
+            if ($totalVertical <= 0) continue;
+
+            // Limitar por unidades disponibles y peso
+            $maxByUnits = min($totalVertical, $remaining[$code]);
+            $unitG = (int)($info[$code]['weight_g'] ?? 0);
+            $maxByWeight = $unitG > 0 ? intdiv($remainingWeightG, $unitG) : $maxByUnits;
+            $count = min($maxByUnits, $maxByWeight);
+
+            if ($count <= 0) continue;
+
+            $results[] = [
+                'type'            => $code,
+                'count'           => $count,
+                'max_slots'       => $totalVertical,
+                'vert_height_cm'  => $vertHeight,
+                'weight_g'        => $count * $unitG,
+            ];
+        }
+
+        // Ordenar por más cajas primero
+        usort($results, fn($a, $b) => $b['count'] <=> $a['count']);
+
+        return $results;
     }
 
     function simulatePackingForPalletType(
@@ -401,21 +548,26 @@ class PalletizationService
             $boxWid = (int)($pv->width_cm  ?? $b->width_cm);
             $boxHei = (int)($pv->height_cm ?? $b->height_cm);
 
-            $perLayer = $this->boxesPerLayer(
-                $palletL,
-                $palletW,
-                $boxLen,
-                $boxWid
+            $layerDetail = $this->boxesPerLayerDetail(
+                $palletL, $palletW, $boxLen, $boxWid
             );
 
             $unitKg = (float)($weightByCode[$code] ?? $b->weight_kg);
             $unitG  = (int) round($unitKg * 1000);
 
             $info[$code] = [
-                'per_layer' => $perLayer,
-                'height_cm' => $boxHei,
-                'weight_kg' => $unitKg,   // solo informativo (UI/metrics)
-                'weight_g'  => $unitG,    // el cálculo real va con esto
+                'per_layer'    => $layerDetail['count'],
+                'height_cm'    => $boxHei,
+                'weight_kg'    => $unitKg,
+                'weight_g'     => $unitG,
+                // Geometría de la orientación óptima horizontal (para calcular huecos verticales)
+                'box_L'        => $layerDetail['box_L'],
+                'box_W'        => $layerDetail['box_W'],
+                'layer_detail' => $layerDetail,
+                // Separador de seguridad cada N capas (null = sin separador)
+                'sec_sep_n'    => $b->security_separator_every_n_layers !== null
+                                    ? (int)$b->security_separator_every_n_layers
+                                    : null,
 
                 'box_variant' => $pv ? [
                     'id' => (int)$pv->id,
@@ -428,6 +580,16 @@ class PalletizationService
                     'height_cm' => (int)$pv->height_cm,
                 ] : null,
             ];
+        }
+
+        // N efectivo de separador de seguridad para este pallet:
+        // el más restrictivo (mínimo) entre los tipos con unidades pendientes que tengan N definido.
+        $secSepN = null;
+        foreach ($this->types as $code) {
+            if (($remaining[$code] ?? 0) <= 0) continue;
+            $n = $info[$code]['sec_sep_n'] ?? null;
+            if ($n === null) continue;
+            $secSepN = $secSepN === null ? $n : min($secSepN, $n);
         }
 
         // Validación mínima — solo para tipos con unidades pendientes de empaquetar
@@ -474,6 +636,14 @@ class PalletizationService
                     'mini_pc'   => 0,
                 ],
             ];
+
+            // Contador de capas desde el último separador de seguridad (o desde el inicio del pallet).
+            // Cuando llega a $secSepN se inserta un separador y se reinicia.
+            $layersSinceSecSep = 0;
+
+            // Indica si el vertical ya fue mostrado desde el último separador de seguridad.
+            // Se reinicia a false tras cada separador para permitir otro bloque vertical.
+            $verticalShownSinceSecSep = false;
 
 
             while (true) {
@@ -560,18 +730,101 @@ class PalletizationService
                 $remaining[$chosen] -= $want;
                 $pallet['boxes'][$chosen] += $want;
 
+                // ── RELLENO VERTICAL DEL HUECO ──────────────────────────────────────
+                // Solo se calcula y muestra en la primera capa de cada bloque
+                // (entre separadores de seguridad). Las siguientes capas del mismo bloque
+                // no repiten el vertical porque el hueco ya está ocupado físicamente.
+                $layer['vertical'] = [];
+                $vertWeightG = 0;
+
+                if (!$verticalShownSinceSecSep) {
+                    $remainingGBeforeVert = $palletMaxG - ((int)$pallet['weight_g'] + (int)$layerWeightG);
+
+                    $vertCandidates = $this->calcVerticalFill(
+                        $palletL,
+                        $palletW,
+                        $info[$chosen]['layer_detail'],
+                        $info,
+                        $remaining,
+                        $remainingGBeforeVert
+                    );
+
+                    foreach ($vertCandidates as $vc) {
+                        $vcCode  = $vc['type'];
+                        $vcCount = $vc['count'];
+
+                        $availG = $remainingGBeforeVert - $vertWeightG;
+                        $unitGv = (int)($info[$vcCode]['weight_g'] ?? 0);
+                        $maxByW = $unitGv > 0 ? intdiv($availG, $unitGv) : $vcCount;
+                        $vcCount = min($vcCount, $remaining[$vcCode], $maxByW);
+
+                        if ($vcCount <= 0) continue;
+
+                        $layer['vertical'][] = [
+                            'type'           => $vcCode,
+                            'count'          => $vcCount,
+                            'vert_height_cm' => $vc['vert_height_cm'],
+                        ];
+
+                        $remaining[$vcCode]      -= $vcCount;
+                        $pallet['boxes'][$vcCode] += $vcCount;
+                        $vertWeightG             += $vcCount * $unitGv;
+                    }
+
+                    if (!empty($layer['vertical'])) {
+                        $verticalShownSinceSecSep = true;
+                    }
+                }
+
+                // Las cajas verticales NO suman a la altura de la capa (van dentro del hueco lateral)
+                // pero SÍ suman al peso total del pallet
+                $layer['has_vertical'] = !empty($layer['vertical']);
+                $layerWeightG += $vertWeightG;
+                // ────────────────────────────────────────────────────────────────────
+
                 $pallet['layers'][] = $layer;
                 $pallet['height_cm'] += $info[$chosen]['height_cm'];
-                $pallet['weight_g'] += (int)$layerWeightG;
+                $pallet['weight_g']  += (int)$layerWeightG;
 
-                $layer['weight_g'] = (int) $layerWeightG;
+                $layer['weight_g']  = (int) $layerWeightG;
                 $layer['weight_kg'] = round(((int)$layerWeightG) / 1000, 3);
 
-                // derivado “bonito” (exacto a gramos)
+                // derivado "bonito" (exacto a gramos)
                 $pallet['weight_kg'] = round(((int)$pallet['weight_g']) / 1000, 3);
 
+                // ── SEPARADOR DE SEGURIDAD ───────────────────────────────────────────
+                // Tras añadir la capa, incrementamos el contador. Si alcanza el N efectivo,
+                // insertamos un separador de seguridad (no suma altura ni peso) y reiniciamos
+                // el bloque: el vertical podrá aparecer de nuevo en la siguiente capa.
+                $layersSinceSecSep++;
+
+                if ($secSepN !== null && $layersSinceSecSep >= $secSepN) {
+                    $stillRemaining = ($remaining['tower'] + $remaining['tower_sff'] + $remaining['laptop'] + $remaining['mini_pc']) > 0;
+                    $heightOk = $pallet['height_cm'] < $palletMaxH;
+                    $weightOk = $pallet['weight_g']  < $palletMaxG;
+
+                    if ($stillRemaining && $heightOk && $weightOk) {
+                        $pallet['layers'][] = [
+                            'type'               => 'security_separator',
+                            'security_separator' => true,
+                            'count'              => 0,
+                            'per_layer'          => 0,
+                            'is_mixed'           => false,
+                            'separator'          => false,
+                            'vertical'           => [],
+                            'has_vertical'       => false,
+                            'weight_g'           => 0,
+                            'weight_kg'          => 0.0,
+                        ];
+
+                        $layersSinceSecSep        = 0;
+                        $verticalShownSinceSecSep = false;
+                    }
+                }
+                // ────────────────────────────────────────────────────────────────────
+
                 if ($pallet['height_cm'] >= $palletMaxH) break;
-                if ($pallet['weight_g'] >= $palletMaxG) break;
+                if ($pallet['weight_g']  >= $palletMaxG) break;
                 if (($remaining['tower'] + $remaining['tower_sff'] + $remaining['laptop'] + $remaining['mini_pc']) <= 0) break;
             }
 
