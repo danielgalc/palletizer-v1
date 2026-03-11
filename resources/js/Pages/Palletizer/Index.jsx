@@ -425,6 +425,7 @@ export default function Index({ result }) {
 
   // --- Box types modal ---
   const [boxModalOpen, setBoxModalOpen] = useState(false);
+  const [boxModalCloseConfirm, setBoxModalCloseConfirm] = useState(false);
   const [boxTypes, setBoxTypes] = useState([]);
   const [loadingBoxTypes, setLoadingBoxTypes] = useState(false);
   const [boxTypesError, setBoxTypesError] = useState(null);
@@ -664,7 +665,20 @@ export default function Index({ result }) {
 
 
   const closeBoxTypesModal = () => {
-    setBoxModalOpen(false);
+    // Comprobar si alguna variante en uso no tiene stock
+    const kinds = ["laptop", "mini_pc", "tower_sff", "tower"];
+    const hasNoStockSelected = kinds.some((kind) => {
+      const selectedId = data?.packaging?.[kind] ? Number(data.packaging[kind]) : null;
+      if (!selectedId) return false;
+      const variant = boxVariants.find((v) => Number(v.id) === selectedId);
+      return variant && Number(variant.on_hand_qty ?? 0) === 0;
+    });
+
+    if (hasNoStockSelected) {
+      setBoxModalCloseConfirm(true); // mostrar diálogo de confirmación
+    } else {
+      setBoxModalOpen(false);
+    }
   };
 
   const onBoxChange = (id, field, value) => {
@@ -1873,6 +1887,14 @@ export default function Index({ result }) {
                                   {v.provider_name} · {v.length_cm}×{v.width_cm}×{v.height_cm} cm
                                   {Number(v.unit_cost_eur) > 0 ? ` · ${fmtEUR(v.unit_cost_eur)}/caja` : " · Sin coste"}
                                 </div>
+                                {!inStock && (
+                                  <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2 py-1.5 ring-1 ring-amber-200">
+                                    <span className="mt-px text-amber-500">⚠</span>
+                                    <span className="text-[11px] font-semibold leading-snug text-amber-700">
+                                      Esta caja no está disponible en fábrica. El cálculo es orientativo — confirma disponibilidad antes de usarla.
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -2038,14 +2060,14 @@ export default function Index({ result }) {
 
               <div className="rounded-xl border border-ink-100 p-4">
                 <div className="flex gap-3">
-                  <div className="text-sm text-ink-900">
+                  <div className="text-md text-ink-900">
                     {best?.carrier_name && (
                       <span>
                         <b>Transportista:</b> <i>{best.carrier_name}</i>
                       </span>
                     )}
                   </div>
-                  <div className="text-sm text-ink-900">
+                  <div className="text-md text-ink-900">
                     <b>Tarifa:</b> <i>{formatPalletType(best)}</i>
                   </div>
                 </div>
@@ -2602,7 +2624,7 @@ export default function Index({ result }) {
       {/* Modal box types */}
       {boxModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 p-4">
-          <div className="w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-soft">
+          <div className="relative w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-soft">
             <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
               <div>
                 <div className="text-sm font-extrabold text-ink-900">Configurar cajas</div>
@@ -2789,7 +2811,7 @@ export default function Index({ result }) {
                                       {cost > 0 ? fmtEUR(cost) : <span className="text-ink-400">—</span>}
                                     </div>
 
-                                    <div className="flex items-center justify-end">
+                                    <div className="flex flex-col items-end gap-1">
                                       <button
                                         type="button"
                                         onClick={() => selectPackagingVariant(kind, id)}
@@ -2916,6 +2938,41 @@ export default function Index({ result }) {
               </div>
             </div>
           </div>
+
+          {/* Diálogo de confirmación: cierre con cajas sin stock seleccionadas */}
+          {boxModalCloseConfirm && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-ink-900/60 p-6">
+              <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-soft">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 text-2xl">⚠️</span>
+                  <div>
+                    <div className="text-sm font-extrabold text-ink-900">Cajas sin stock seleccionadas</div>
+                    <p className="mt-2 text-xs leading-relaxed text-ink-600">
+                      Tienes seleccionadas una o más cajas que actualmente <b>no están disponibles en fábrica</b>.
+                      El cálculo se realizará igualmente, pero es orientativo.
+                      Confirma disponibilidad con el proveedor antes de proceder.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBoxModalCloseConfirm(false)}
+                    className="rounded-xl border border-ink-200 bg-white px-4 py-2 text-xs font-extrabold text-ink-800 hover:bg-ink-50"
+                  >
+                    Volver al modal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setBoxModalCloseConfirm(false); setBoxModalOpen(false); }}
+                    className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-extrabold text-white hover:bg-amber-600"
+                  >
+                    Entendido, cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

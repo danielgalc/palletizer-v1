@@ -167,25 +167,25 @@ class MasterDataSeeder extends Seeder
         $variants = [
             // ── REUTILIZADAS ─────────────────────────────────────────────────
             // Electronic Bazaar
-            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>42,'w'=>32,'h'=>12, 'cost'=>0.00],
-            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>36,'w'=>26,'h'=>14, 'cost'=>0.00],
-            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>48,'w'=>30,'h'=>38, 'cost'=>0.00],
-            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>60,'w'=>35,'h'=>48, 'cost'=>0.00],
+            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>42,'w'=>32,'h'=>12, 'cost'=>0.14],
+            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>36,'w'=>26,'h'=>14, 'cost'=>0.14],
+            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>48,'w'=>30,'h'=>38, 'cost'=>0.14],
+            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'Electronic Bazaar', 'l'=>60,'w'=>35,'h'=>48, 'cost'=>0.14],
             // Ledmax
-            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>41,'w'=>31,'h'=>11, 'cost'=>0.00],
-            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>35,'w'=>25,'h'=>13, 'cost'=>0.00],
-            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>47,'w'=>29,'h'=>37, 'cost'=>0.00],
-            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>58,'w'=>34,'h'=>47, 'cost'=>0.00],
+            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>41,'w'=>31,'h'=>11, 'cost'=>0.14],
+            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>35,'w'=>25,'h'=>13, 'cost'=>0.14],
+            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>47,'w'=>29,'h'=>37, 'cost'=>0.14],
+            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'Ledmax', 'l'=>58,'w'=>34,'h'=>47, 'cost'=>0.14],
             // RePC Europe
-            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>40,'w'=>30,'h'=>11, 'cost'=>0.00],
-            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>34,'w'=>24,'h'=>13, 'cost'=>0.00],
-            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>46,'w'=>28,'h'=>36, 'cost'=>0.00],
-            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>57,'w'=>33,'h'=>46, 'cost'=>0.00],
+            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>40,'w'=>30,'h'=>11, 'cost'=>0.14],
+            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>34,'w'=>24,'h'=>13, 'cost'=>0.14],
+            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>46,'w'=>28,'h'=>36, 'cost'=>0.14],
+            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'RePC Europe', 'l'=>57,'w'=>33,'h'=>46, 'cost'=>0.14],
             // GreenIT
-            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>43,'w'=>33,'h'=>12, 'cost'=>0.00],
-            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>37,'w'=>27,'h'=>15, 'cost'=>0.00],
-            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>49,'w'=>31,'h'=>39, 'cost'=>0.00],
-            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>61,'w'=>36,'h'=>49, 'cost'=>0.00],
+            ['kind'=>'laptop',    'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>43,'w'=>33,'h'=>12, 'cost'=>0.14],
+            ['kind'=>'mini_pc',   'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>37,'w'=>27,'h'=>15, 'cost'=>0.14],
+            ['kind'=>'tower_sff', 'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>49,'w'=>31,'h'=>39, 'cost'=>0.14],
+            ['kind'=>'tower',     'cond'=>'reused', 'prov'=>'GreenIT', 'l'=>61,'w'=>36,'h'=>49, 'cost'=>0.14],
 
             // ── NUEVAS ────────────────────────────────────────────────────────
             // ByteBox Solutions (calidad estándar)

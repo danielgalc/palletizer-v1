@@ -14,6 +14,10 @@ class PalletizationService
      */
     private array $types = ['tower', 'tower_sff', 'laptop', 'mini_pc'];
 
+    /** Tara del pallet vacío descontada del espacio útil para equipos */
+    private const PALLET_TARE_HEIGHT_CM = 14.4;
+    private const PALLET_TARE_WEIGHT_G  = 20000;
+
     /**
      * Resuelve el id numérico del pallet_type.
      * En BD rates.pallet_type_id es FK (bigint), así que aquí evitamos pasar códigos tipo 'mini_quarter'.
@@ -533,6 +537,11 @@ class PalletizationService
         $palletMaxH = (int)$palletType->max_height_cm;
         $palletMaxKg = (float)$palletType->max_weight_kg;
         $palletMaxG = (int) round($palletMaxKg * 1000); // gramos
+
+        // Tara del pallet vacío: 14.4 cm de altura + 20 kg de peso.
+        // El espacio útil para los equipos se reduce en consecuencia.
+        $palletMaxH = (int) floor($palletMaxH - self::PALLET_TARE_HEIGHT_CM);
+        $palletMaxG = $palletMaxG - self::PALLET_TARE_WEIGHT_G;
 
 
         // Info por tipo (cajas/capa, altura, peso)
