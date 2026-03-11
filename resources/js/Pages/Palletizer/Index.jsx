@@ -32,9 +32,9 @@ function Field({ label, hint, error, children }) {
 
 function Stat({ label, value, sub }) {
   return (
-    <div className="rounded-xl border border-ink-100 bg-ink-50 p-4">
+    <div className="rounded-xl border border-ink-100 bg-ink-50 p-4 min-w-0">
       <div className="text-xs text-ink-500">{label}</div>
-      <div className="mt-1 text-2xl font-extrabold text-ink-900">{value}</div>
+      <div className="mt-1 text-xl font-extrabold text-ink-900 whitespace-nowrap">{value}</div>
       {sub ? <div className="mt-1 text-xs text-ink-500">{sub}</div> : null}
     </div>
   );
@@ -496,6 +496,7 @@ export default function Index({ result }) {
   const [carriersError, setCarriersError] = useState(null);
 
   // Alternativas
+  const [alternativesOpen, setAlternativesOpen] = useState(true);
   const [openAltRows, setOpenAltRows] = useState(() => ({}));
 
   const toggleAltRow = (key) => {
@@ -1492,7 +1493,7 @@ export default function Index({ result }) {
 
   return (
     <AppLayout title="Palletizer">
-      <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
         {/* Panel izquierdo */}
         <Card className="p-5">
           <div className="flex items-start justify-between gap-3">
@@ -1989,7 +1990,7 @@ export default function Index({ result }) {
         </Card>
 
         {/* Panel derecho */}
-        <Card className="p-5">
+        <Card className="overflow-hidden p-5">
           <div className="mx-auto flex items-center justify-center px-4 py-2">
             <div className="h-12 w-52 overflow-hidden flex items-center justify-center">
               <img src="/palletizer.png" alt="Palletizer" className="h-30 mt-1 w-auto object-contain" />
@@ -2037,14 +2038,14 @@ export default function Index({ result }) {
 
               <div className="rounded-xl border border-ink-100 p-4">
                 <div className="flex gap-3">
-                  <div className="text-md text-ink-900">
+                  <div className="text-sm text-ink-900">
                     {best?.carrier_name && (
                       <span>
                         <b>Transportista:</b> <i>{best.carrier_name}</i>
                       </span>
                     )}
                   </div>
-                  <div className="text-md text-ink-900">
+                  <div className="text-sm text-ink-900">
                     <b>Tarifa:</b> <i>{formatPalletType(best)}</i>
                   </div>
                 </div>
@@ -2400,7 +2401,11 @@ export default function Index({ result }) {
 
               {/* ALTERNATIVAS (compactas + colapsables) */}
               {alternatives.length > 0 && (
-                <details className="rounded-2xl border border-ink-100 bg-white p-4" open>
+                <details
+                  className="overflow-hidden rounded-2xl border border-ink-100 bg-white p-4"
+                  open={alternativesOpen}
+                  onToggle={(e) => setAlternativesOpen(e.currentTarget.open)}
+                >
                   <summary className="cursor-pointer text-sm font-extrabold text-ink-900">
                     Alternativas
                     <span className="ml-2 text-xs font-semibold text-ink-500">
