@@ -28,36 +28,36 @@ class ExportController extends Controller
         ]);
 
         $v = Validator::make($request->all(), [
-            'country_code' => ['required', 'string', 'size:2', 'exists:countries,code'],
-            'province_id' => ['required_if:country_code,ES', 'nullable', 'integer'],
-            'zone_id' => ['required_unless:country_code,ES', 'nullable', 'integer', 'exists:zones,id'],
-            'tower' => ['nullable', 'integer', 'min:0'],
-            'laptop' => ['nullable', 'integer', 'min:0'],
-            'mini_pc' => ['nullable', 'integer', 'min:0'],
-            'allow_separators' => ['boolean'],
-            'pallet_mode' => ['required', 'in:auto,manual'],
-            'pallet_type_codes' => ['array'],
+            'country_code'        => ['required', 'string', 'size:2', 'exists:countries,code'],
+            'province_id'         => ['required_if:country_code,ES', 'nullable', 'integer'],
+            'zone_id'             => ['required_unless:country_code,ES', 'nullable', 'integer', 'exists:zones,id'],
+            'tower'               => ['nullable', 'integer', 'min:0'],
+            'tower_sff'           => ['nullable', 'integer', 'min:0'],
+            'laptop'              => ['nullable', 'integer', 'min:0'],
+            'mini_pc'             => ['nullable', 'integer', 'min:0'],
+            'allow_separators'    => ['boolean'],
+            'pallet_mode'         => ['required', 'in:auto,manual'],
+            'pallet_type_codes'   => ['array'],
             'pallet_type_codes.*' => ['string'],
+            'carrier_mode'        => ['required', 'in:auto,manual'],
+            'carrier_ids'         => ['nullable', 'array'],
+            'carrier_ids.*'       => ['integer', 'exists:carriers,id'],
+            'lines'               => ['nullable', 'array'],
+            'lines.*.device_model_id' => ['nullable', 'integer', 'exists:device_models,id'],
+            'lines.*.qty'         => ['nullable', 'integer', 'min:0'],
+            'packaging'           => ['nullable', 'array'],
+            'packaging.tower'     => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.tower_sff' => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.laptop'    => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.mini_pc'   => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
         ]);
         $v->validate();
 
-        // 1) Resolver zona desde province_id
-        $province = DB::table('provinces')->where('id', $request->province_id)->first();
-        if (!$province) {
-            abort(422, 'Provincia no encontrada');
-        }
+        // 1) Resolver zona
+        $zoneId = $this->resolveZoneId($request);
 
-        $zoneId = (int)($province->zone_id ?? 0);
-        if ($zoneId <= 0) {
-            abort(422, 'La provincia no tiene zone_id válido');
-        }
-
-        // 2) Preparar items
-        $items = [
-            'tower' => (int)($request->tower ?? 0),
-            'laptop' => (int)($request->laptop ?? 0),
-            'mini_pc' => (int)($request->mini_pc ?? 0),
-        ];
+        // 2) Preparar items (lines tienen prioridad sobre contadores directos)
+        $items = $this->buildItems($request);
 
         $allowSeparators = (bool)($request->allow_separators ?? true);
 
@@ -66,8 +66,13 @@ class ExportController extends Controller
             $allowedTypes = $request->pallet_type_codes ?? [];
         }
 
+        $carrierIds = null;
+        if (($request->carrier_mode ?? 'auto') === 'manual') {
+            $carrierIds = $request->carrier_ids ?? [];
+        }
+
         // 3) Calcular
-        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators);
+        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators, $carrierIds);
         if (!empty($plan['error'])) {
             abort(422, $plan['error']);
         }
@@ -197,30 +202,45 @@ class ExportController extends Controller
 
         $this->styleTitle($palletSheet, 'A1', 'Detalle por pallet');
 
-        $headers = ['#', 'Torres', 'Portátiles', 'Mini PCs', 'Separadores', 'Altura libre (cm)', 'Peso libre (kg)', 'Capas'];
+        $headers = ['#', 'Torres MT', 'Torres SFF', 'Portátiles', 'Mini PCs', 'Sep. mezcla', 'Sep. seguridad', 'Altura libre (cm)', 'Peso libre (kg)', 'Capas'];
         $palletSheet->fromArray($headers, null, 'A3');
-        $this->styleHeaderRow($palletSheet, 'A3:H3');
-        $this->setAutoFilterAndFreeze($palletSheet, 'A3:H3', 'A4');
+        $this->styleHeaderRow($palletSheet, 'A3:J3');
+        $this->setAutoFilterAndFreeze($palletSheet, 'A3:J3', 'A4');
 
         $r = 4;
         foreach ($bestPallets as $i => $p) {
-            $layers = is_array($p['layers'] ?? null) ? $p['layers'] : [];
+            $layers  = is_array($p['layers'] ?? null) ? $p['layers'] : [];
+            $boxes   = is_array($p['boxes']  ?? null) ? $p['boxes']  : [];
+
+            // Contar separadores de seguridad (tipo especial en layers)
+            $secSeps = count(array_filter($layers, fn($l) => !empty($l['security_separator'])));
+            // Separadores de mezcla (capas con separator=true)
+            $mixSeps = count(array_filter($layers, fn($l) => !empty($l['separator']) && empty($l['security_separator'])));
+            // Capas reales (sin separadores de seguridad)
+            $realLayers = count(array_filter($layers, fn($l) => empty($l['security_separator'])));
+
+            $heightLeft = (int)($p['remaining_capacity']['height_cm_left']
+                ?? (($p['height_cm'] ?? 0) > 0 ? 0 : ''));
+            $weightLeft = (float)($p['remaining_capacity']['weight_kg_left'] ?? 0);
+
             $palletSheet->setCellValue("A{$r}", $i + 1);
-            $palletSheet->setCellValue("B{$r}", (int)($p['tower'] ?? 0));
-            $palletSheet->setCellValue("C{$r}", (int)($p['laptop'] ?? 0));
-            $palletSheet->setCellValue("D{$r}", (int)($p['mini_pc'] ?? 0));
-            $palletSheet->setCellValue("E{$r}", (int)($p['separators_used'] ?? 0));
-            $palletSheet->setCellValue("F{$r}", (int)($p['remaining_capacity']['height_cm_left'] ?? 0));
-            $palletSheet->setCellValue("G{$r}", (float)($p['remaining_capacity']['weight_kg_left'] ?? 0));
-            $palletSheet->setCellValue("H{$r}", count($layers));
+            $palletSheet->setCellValue("B{$r}", (int)($boxes['tower']     ?? 0));
+            $palletSheet->setCellValue("C{$r}", (int)($boxes['tower_sff'] ?? 0));
+            $palletSheet->setCellValue("D{$r}", (int)($boxes['laptop']    ?? 0));
+            $palletSheet->setCellValue("E{$r}", (int)($boxes['mini_pc']   ?? 0));
+            $palletSheet->setCellValue("F{$r}", $mixSeps);
+            $palletSheet->setCellValue("G{$r}", $secSeps);
+            $palletSheet->setCellValue("H{$r}", $heightLeft);
+            $palletSheet->setCellValue("I{$r}", $weightLeft);
+            $palletSheet->setCellValue("J{$r}", $realLayers);
             $r++;
         }
 
         if ($r > 4) {
-            $this->num2Format($palletSheet, "G4:G" . ($r - 1), 'kg');
+            $this->num2Format($palletSheet, "I4:I" . ($r - 1), 'kg');
         }
 
-        $this->autosizeColumns($palletSheet, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+        $this->autosizeColumns($palletSheet, ['A','B','C','D','E','F','G','H','I','J']);
 
         // ======================
         // HOJA 3: CAPAS
@@ -230,35 +250,98 @@ class ExportController extends Controller
 
         $this->styleTitle($layerSheet, 'A1', 'Detalle por capa');
 
-        $headers = ['Pallet #', 'Capa #', 'Base', 'Torres', 'Portátiles', 'Mini PCs', 'Altura (cm)', 'Peso (kg)', 'Huecos', 'Separador'];
+        $headers = ['Pallet #', 'Capa #', 'Tipo', 'Torres MT', 'Torres SFF', 'Portátiles', 'Mini PCs', 'Vertical', 'Altura (cm)', 'Peso (kg)', 'Sep. mezcla', 'Sep. seguridad'];
         $layerSheet->fromArray($headers, null, 'A3');
-        $this->styleHeaderRow($layerSheet, 'A3:J3');
-        $this->setAutoFilterAndFreeze($layerSheet, 'A3:J3', 'A4');
+        $this->styleHeaderRow($layerSheet, 'A3:L3');
+        $this->setAutoFilterAndFreeze($layerSheet, 'A3:L3', 'A4');
 
         $r = 4;
+        $layerNum = 0; // número de capa visible (sin contar separadores de seguridad)
         foreach ($bestPallets as $pi => $p) {
             $layers = is_array($p['layers'] ?? null) ? $p['layers'] : [];
-            foreach ($layers as $li => $layer) {
-                $counts = is_array($layer['counts'] ?? null) ? $layer['counts'] : [];
+            $layerNum = 0;
+            foreach ($layers as $layer) {
+                // Separador de seguridad: fila especial sin conteo de capa
+                if (!empty($layer['security_separator'])) {
+                    $layerSheet->setCellValue("A{$r}", $pi + 1);
+                    $layerSheet->setCellValue("B{$r}", '—');
+                    $layerSheet->setCellValue("C{$r}", 'Separador de seguridad');
+                    $layerSheet->getStyle("A{$r}:L{$r}")->getFont()->setItalic(true);
+                    $layerSheet->getStyle("A{$r}:L{$r}")->getFill()
+                        ->setFillType(Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB('FEF9C3'); // amarillo suave
+                    $r++;
+                    continue;
+                }
+
+                $layerNum++;
+
+                // Conteo de cajas usando el helper de lógica equivalente al frontend
+                $counts = $this->layerCounts($layer);
+
+                // Cajas verticales (suma por tipo)
+                $vertCounts = ['tower' => 0, 'tower_sff' => 0, 'laptop' => 0, 'mini_pc' => 0];
+                $vertTotal  = 0;
+                foreach (($layer['vertical'] ?? []) as $v) {
+                    $vt = $v['type'] ?? null;
+                    $vc = (int)($v['count'] ?? 0);
+                    if ($vt && array_key_exists($vt, $vertCounts)) {
+                        $vertCounts[$vt] += $vc;
+                        $vertTotal       += $vc;
+                    }
+                }
+
+                $typeLabels = ['tower' => 'Torre MT', 'tower_sff' => 'Torre SFF', 'laptop' => 'Portátil', 'mini_pc' => 'Mini PC'];
+                $baseLabel  = $typeLabels[$layer['type'] ?? ''] ?? ($layer['type'] ?? '—');
+
                 $layerSheet->setCellValue("A{$r}", $pi + 1);
-                $layerSheet->setCellValue("B{$r}", $li + 1);
-                $layerSheet->setCellValue("C{$r}", (string)($layer['base_type'] ?? ''));
-                $layerSheet->setCellValue("D{$r}", (int)($counts['tower'] ?? 0));
-                $layerSheet->setCellValue("E{$r}", (int)($counts['laptop'] ?? 0));
-                $layerSheet->setCellValue("F{$r}", (int)($counts['mini_pc'] ?? 0));
-                $layerSheet->setCellValue("G{$r}", (int)($layer['height_cm'] ?? 0));
-                $layerSheet->setCellValue("H{$r}", (float)($layer['weight_kg'] ?? 0));
-                $layerSheet->setCellValue("I{$r}", (int)($layer['slots_empty'] ?? 0));
-                $layerSheet->setCellValue("J{$r}", !empty($layer['needs_separator']) ? 'Sí' : 'No');
+                $layerSheet->setCellValue("B{$r}", $layerNum);
+                $layerSheet->setCellValue("C{$r}", $baseLabel);
+                $layerSheet->setCellValue("D{$r}", (int)($counts['tower']     ?? 0));
+                $layerSheet->setCellValue("E{$r}", (int)($counts['tower_sff'] ?? 0));
+                $layerSheet->setCellValue("F{$r}", (int)($counts['laptop']    ?? 0));
+                $layerSheet->setCellValue("G{$r}", (int)($counts['mini_pc']   ?? 0));
+                $layerSheet->setCellValue("H{$r}", $vertTotal > 0 ? $vertTotal : '');
+                $layerSheet->setCellValue("I{$r}", (int)($layer['height_cm']  ?? 0));
+                $layerSheet->setCellValue("J{$r}", (float)($layer['weight_kg'] ?? 0));
+                $layerSheet->setCellValue("K{$r}", !empty($layer['separator']) ? 'Sí' : 'No');
+                $layerSheet->setCellValue("L{$r}", 'No'); // seguridad se representa como fila propia
                 $r++;
             }
         }
 
         if ($r > 4) {
-            $this->num2Format($layerSheet, "H4:H" . ($r - 1), 'kg');
+            $this->num2Format($layerSheet, "J4:J" . ($r - 1), 'kg');
         }
 
-        $this->autosizeColumns($layerSheet, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']);
+        $this->autosizeColumns($layerSheet, ['A','B','C','D','E','F','G','H','I','J','K','L']);
+
+        // ======================
+        // HOJA 4: MODELOS
+        // ======================
+        $modelLines = $this->resolveModelLines($request);
+
+        if (!empty($modelLines)) {
+            $modelSheet = $spreadsheet->createSheet();
+            $modelSheet->setTitle('Modelos');
+
+            $this->styleTitle($modelSheet, 'A1', 'Modelos incluidos en el envío');
+
+            $modelSheet->fromArray(['Marca', 'Modelo', 'Tipo de caja', 'Uds.'], null, 'A3');
+            $this->styleHeaderRow($modelSheet, 'A3:D3');
+            $this->setAutoFilterAndFreeze($modelSheet, 'A3:D3', 'A4');
+
+            $r = 4;
+            foreach ($modelLines as $m) {
+                $modelSheet->setCellValue("A{$r}", $m['brand']);
+                $modelSheet->setCellValue("B{$r}", $m['name']);
+                $modelSheet->setCellValue("C{$r}", $m['box_type']);
+                $modelSheet->setCellValue("D{$r}", $m['qty']);
+                $r++;
+            }
+
+            $this->autosizeColumns($modelSheet, ['A', 'B', 'C', 'D']);
+        }
 
         // Volver a Resumen por defecto
         $spreadsheet->setActiveSheetIndex(0);
@@ -275,37 +358,38 @@ class ExportController extends Controller
 
     public function bestPlanPdf(Request $request, PalletizationService $service)
     {
-        // Reutiliza la misma validación / resolución de zona / items que en bestPlan()
-
         $request->merge([
             'country_code' => strtoupper($request->input('country_code', 'ES')),
         ]);
 
         $v = Validator::make($request->all(), [
-            'country_code' => ['required', 'string', 'size:2', 'exists:countries,code'],
-            'province_id' => ['required_if:country_code,ES', 'nullable', 'integer'],
-            'zone_id' => ['required_unless:country_code,ES', 'nullable', 'integer', 'exists:zones,id'],
-            'tower' => ['nullable', 'integer', 'min:0'],
-            'laptop' => ['nullable', 'integer', 'min:0'],
-            'mini_pc' => ['nullable', 'integer', 'min:0'],
-            'allow_separators' => ['boolean'],
-            'pallet_mode' => ['required', 'in:auto,manual'],
-            'pallet_type_codes' => ['array'],
+            'country_code'        => ['required', 'string', 'size:2', 'exists:countries,code'],
+            'province_id'         => ['required_if:country_code,ES', 'nullable', 'integer'],
+            'zone_id'             => ['required_unless:country_code,ES', 'nullable', 'integer', 'exists:zones,id'],
+            'tower'               => ['nullable', 'integer', 'min:0'],
+            'tower_sff'           => ['nullable', 'integer', 'min:0'],
+            'laptop'              => ['nullable', 'integer', 'min:0'],
+            'mini_pc'             => ['nullable', 'integer', 'min:0'],
+            'allow_separators'    => ['boolean'],
+            'pallet_mode'         => ['required', 'in:auto,manual'],
+            'pallet_type_codes'   => ['array'],
             'pallet_type_codes.*' => ['string'],
+            'carrier_mode'        => ['required', 'in:auto,manual'],
+            'carrier_ids'         => ['nullable', 'array'],
+            'carrier_ids.*'       => ['integer', 'exists:carriers,id'],
+            'lines'               => ['nullable', 'array'],
+            'lines.*.device_model_id' => ['nullable', 'integer', 'exists:device_models,id'],
+            'lines.*.qty'         => ['nullable', 'integer', 'min:0'],
+            'packaging'           => ['nullable', 'array'],
+            'packaging.tower'     => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.tower_sff' => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.laptop'    => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
+            'packaging.mini_pc'   => ['nullable', 'integer', 'min:1', 'exists:box_variants,id'],
         ]);
         $v->validate();
 
-        $province = \DB::table('provinces')->where('id', $request->province_id)->first();
-        if (!$province) abort(422, 'Provincia no encontrada');
-
-        $zoneId = (int)($province->zone_id ?? 0);
-        if ($zoneId <= 0) abort(422, 'La provincia no tiene zone_id válido');
-
-        $items = [
-            'tower' => (int)($request->tower ?? 0),
-            'laptop' => (int)($request->laptop ?? 0),
-            'mini_pc' => (int)($request->mini_pc ?? 0),
-        ];
+        $zoneId = $this->resolveZoneId($request);
+        $items  = $this->buildItems($request);
 
         $allowSeparators = (bool)($request->allow_separators ?? true);
 
@@ -314,7 +398,12 @@ class ExportController extends Controller
             $allowedTypes = $request->pallet_type_codes ?? [];
         }
 
-        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators);
+        $carrierIds = null;
+        if (($request->carrier_mode ?? 'auto') === 'manual') {
+            $carrierIds = $request->carrier_ids ?? [];
+        }
+
+        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators, $carrierIds);
         if (!empty($plan['error'])) abort(422, $plan['error']);
 
         $best = $plan['best'] ?? null;
@@ -322,23 +411,140 @@ class ExportController extends Controller
 
         $total = (float)($best['total_price'] ?? 0);
         $count = (int)($best['pallet_count'] ?? 0);
-        $avg = ($count > 0) ? ($total / $count) : 0;
+        $avg   = ($count > 0) ? ($total / $count) : 0;
+
+        $province = DB::table('provinces')->where('id', $request->province_id)->first();
 
         $meta = [
-            'company' => 'Pulsia',
-            'province' => (string)($province->name ?? ''),
-            'zone_id' => $zoneId,
+            'company'      => 'Pulsia',
+            'province'     => (string)($province->name ?? ''),
+            'zone_id'      => $zoneId,
             'generated_at' => now()->format('Y-m-d H:i'),
         ];
 
         $pdf = Pdf::loadView('exports.best_plan', [
-            'best' => $best,
-            'avg' => $avg,
-            'meta' => $meta,
+            'best'        => $best,
+            'avg'         => $avg,
+            'meta'        => $meta,
+            'modelLines'  => $this->resolveModelLines($request),
         ])->setPaper('a4', 'portrait');
 
         $filename = 'best_plan_' . date('Y-m-d_H-i') . '.pdf';
         return $pdf->download($filename);
+    }
+
+    // ======================
+    // Helpers internos
+    // ======================
+
+    private function resolveZoneId(Request $request): int
+    {
+        if ($request->country_code !== 'ES') {
+            $zoneId = (int)($request->zone_id ?? 0);
+            if ($zoneId <= 0) abort(422, 'zone_id inválido');
+            return $zoneId;
+        }
+
+        $province = DB::table('provinces')->where('id', $request->province_id)->first();
+        if (!$province) abort(422, 'Provincia no encontrada');
+
+        $zoneId = (int)($province->zone_id ?? 0);
+        if ($zoneId <= 0) abort(422, 'La provincia no tiene zone_id válido');
+
+        return $zoneId;
+    }
+
+    private function buildItems(Request $request): array
+    {
+        $items = [
+            'tower'     => (int)($request->tower     ?? 0),
+            'tower_sff' => (int)($request->tower_sff ?? 0),
+            'laptop'    => (int)($request->laptop    ?? 0),
+            'mini_pc'   => (int)($request->mini_pc   ?? 0),
+        ];
+
+        // Lines de modelos (tienen prioridad sobre los contadores directos)
+        if (!empty($request->lines) && is_array($request->lines)) {
+            $items['lines'] = $request->lines;
+        }
+
+        // Selección de variantes de embalaje
+        if (!empty($request->packaging) && is_array($request->packaging)) {
+            $items['packaging'] = $request->packaging;
+        }
+
+        return $items;
+    }
+
+    /**
+     * Calcula el conteo de cajas por tipo en una capa, equivalente a getLayerCounts del frontend.
+     * Formato nuevo: {type, count, mixed:[{type,count}], vertical:[{type,count}]}
+     */
+    private function layerCounts(array $layer): array
+    {
+        $counts = ['tower' => 0, 'tower_sff' => 0, 'laptop' => 0, 'mini_pc' => 0];
+
+        $t = $layer['type'] ?? null;
+        $c = (int)($layer['count'] ?? 0);
+        if ($t && array_key_exists($t, $counts)) {
+            $counts[$t] += $c;
+        }
+
+        foreach (($layer['mixed'] ?? []) as $m) {
+            $mt = $m['type'] ?? null;
+            $mc = (int)($m['count'] ?? 0);
+            if ($mt && array_key_exists($mt, $counts)) {
+                $counts[$mt] += $mc;
+            }
+        }
+
+        // Las verticales van en columna separada, NO se suman aquí al horizontal
+        return $counts;
+    }
+
+    /**
+     * Resuelve los modelos del request (lines) en filas con brand, name, box_type y qty.
+     * Devuelve array vacío si no hay lines.
+     * [['brand'=>..., 'name'=>..., 'box_type'=>..., 'qty'=>...], ...]
+     */
+    private function resolveModelLines(Request $request): array
+    {
+        $lines = $request->lines ?? [];
+        if (empty($lines) || !is_array($lines)) return [];
+
+        $modelQty = [];
+        foreach ($lines as $line) {
+            $id  = (int)($line['device_model_id'] ?? 0);
+            $qty = (int)($line['qty'] ?? 0);
+            if ($id > 0 && $qty > 0) {
+                $modelQty[$id] = ($modelQty[$id] ?? 0) + $qty;
+            }
+        }
+
+        if (empty($modelQty)) return [];
+
+        $rows = DB::table('device_models as dm')
+            ->join('box_types as bt', 'bt.id', '=', 'dm.box_type_id')
+            ->whereIn('dm.id', array_keys($modelQty))
+            ->select(['dm.id', 'dm.brand', 'dm.name', 'bt.name as box_type_name'])
+            ->get();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[] = [
+                'brand'     => (string)($row->brand          ?? ''),
+                'name'      => (string)($row->name           ?? ''),
+                'box_type'  => (string)($row->box_type_name  ?? ''),
+                'qty'       => (int)($modelQty[$row->id]     ?? 0),
+            ];
+        }
+
+        // Ordenar por tipo de caja, luego marca, luego nombre
+        usort($result, fn($a, $b) =>
+            [$a['box_type'], $a['brand'], $a['name']] <=> [$b['box_type'], $b['brand'], $b['name']]
+        );
+
+        return $result;
     }
 
     // ======================

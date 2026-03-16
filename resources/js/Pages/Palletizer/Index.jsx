@@ -1078,13 +1078,17 @@ export default function Index({ result }) {
         country_code: data.country_code,
         province_id: data.country_code === "ES" ? data.province_id : null,
         zone_id: data.country_code === "ES" ? null : data.zone_id,
-        tower: Number(data.tower ?? 0),
-        laptop: Number(data.laptop ?? 0),
-        mini_pc: Number(data.mini_pc ?? 0),
+        tower:     Number(data.tower     ?? 0),
+        tower_sff: Number(data.tower_sff ?? 0),
+        laptop:    Number(data.laptop    ?? 0),
+        mini_pc:   Number(data.mini_pc   ?? 0),
         allow_separators: !!data.allow_separators,
-
-        carrier_mode: data.carrier_mode,
+        pallet_mode: data.pallet_mode ?? "auto",
+        pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
+        carrier_mode: data.carrier_mode ?? "auto",
         carrier_ids: Array.isArray(data.carrier_ids) ? data.carrier_ids : [],
+        lines: Array.isArray(data.lines) ? data.lines : [],
+        packaging: data.packaging ?? {},
       };
 
       const res = await fetch("/api/export/best-plan", {
@@ -1133,11 +1137,20 @@ export default function Index({ result }) {
 
     try {
       const payload = {
-        province_id: data.province_id,
-        tower: Number(data.tower ?? 0),
-        laptop: Number(data.laptop ?? 0),
-        mini_pc: Number(data.mini_pc ?? 0),
+        country_code: data.country_code,
+        province_id: data.country_code === "ES" ? data.province_id : null,
+        zone_id: data.country_code === "ES" ? null : data.zone_id,
+        tower:     Number(data.tower     ?? 0),
+        tower_sff: Number(data.tower_sff ?? 0),
+        laptop:    Number(data.laptop    ?? 0),
+        mini_pc:   Number(data.mini_pc   ?? 0),
         allow_separators: !!data.allow_separators,
+        pallet_mode: data.pallet_mode ?? "auto",
+        pallet_type_codes: Array.isArray(data.pallet_type_codes) ? data.pallet_type_codes : [],
+        carrier_mode: data.carrier_mode ?? "auto",
+        carrier_ids: Array.isArray(data.carrier_ids) ? data.carrier_ids : [],
+        lines: Array.isArray(data.lines) ? data.lines : [],
+        packaging: data.packaging ?? {},
       };
 
       const res = await fetch("/api/export/best-plan-pdf", {
