@@ -32,7 +32,7 @@ class RateController extends Controller
             $query->where('r.zone_id', $request->zone_id);
         }
 
-        $rates = $query->orderBy('c.name')->orderBy('co.name')->orderBy('z.name')->orderBy('pt.name')->orderBy('r.min_pallets')->get();
+        $rates = $query->orderBy('c.name')->orderBy('co.name')->orderBy('z.name')->orderBy('pt.name')->orderBy('r.min_pallets')->paginate(25)->withQueryString();
 
         $carriers    = DB::table('carriers')->orderBy('name')->get();
         $zones       = DB::table('zones as z')

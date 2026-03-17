@@ -3,7 +3,7 @@ import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
     Btn, Field, Input, Select, Modal, ConfirmDialog,
-    Table, Tr, Td, PageHeader,
+    Table, Tr, Td, PageHeader, Pagination,
 } from "@/Components/Admin/Ui";
 
 const EMPTY = {
@@ -16,12 +16,26 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
     const [modalOpen, setModalOpen]       = useState(false);
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
-
-    // Filtros locales de la tabla (adicionales a los del servidor)
     const [localCarrier, setLocalCarrier] = useState(filters?.carrier_id ?? "");
     const [localZone, setLocalZone]       = useState(filters?.zone_id ?? "");
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
+
+    const applyFilters = (patch) => {
+        const next = { carrier_id: localCarrier, zone_id: localZone, ...patch };
+        router.get("/admin/rates", {
+            carrier_id: next.carrier_id || undefined,
+            zone_id:    next.zone_id    || undefined,
+        }, { preserveState: true, preserveScroll: true, replace: true });
+    };
+
+    const goToPage = (page) => {
+        router.get("/admin/rates", {
+            carrier_id: localCarrier || undefined,
+            zone_id:    localZone    || undefined,
+            page,
+        }, { preserveState: true, preserveScroll: true });
+    };
 
     const openCreate = () => { reset(); clearErrors(); setEditing(null); setModalOpen(true); };
     const openEdit   = (r) => {
@@ -43,28 +57,19 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
             : post("/admin/rates", opts);
     };
 
-    // Filtrado en cliente (sobre los datos ya cargados)
-    const filtered = useMemo(() => {
-        return rates.filter((r) => {
-            if (localCarrier && String(r.carrier_id) !== String(localCarrier)) return false;
-            if (localZone    && String(r.zone_id)    !== String(localZone))    return false;
-            return true;
-        });
-    }, [rates, localCarrier, localZone]);
-
-    // Agrupar por transportista para mostrar cabeceras de grupo
+    // Agrupar por transportista para cabeceras visuales
     const grouped = useMemo(() => {
         const groups = [];
         let lastCarrier = null;
-        for (const r of filtered) {
+        for (const r of rates.data) {
             if (r.carrier_name !== lastCarrier) {
-                groups.push({ type: "header", name: r.carrier_name, key: `h-${r.carrier_id}` });
+                groups.push({ type: "header", name: r.carrier_name, key: `h-${r.carrier_id}-${r.carrier_name}` });
                 lastCarrier = r.carrier_name;
             }
             groups.push({ type: "row", data: r, key: r.id });
         }
         return groups;
-    }, [filtered]);
+    }, [rates.data]);
 
     return (
         <AdminLayout title="Tarifas">
@@ -79,7 +84,10 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                 <Select
                     className="w-auto min-w-[180px]"
                     value={localCarrier}
-                    onChange={(e) => setLocalCarrier(e.target.value)}
+                    onChange={(e) => {
+                        setLocalCarrier(e.target.value);
+                        applyFilters({ carrier_id: e.target.value });
+                    }}
                 >
                     <option value="">Todos los transportistas</option>
                     {carriers.map((c) => (
@@ -90,7 +98,10 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                 <Select
                     className="w-auto min-w-[200px]"
                     value={localZone}
-                    onChange={(e) => setLocalZone(e.target.value)}
+                    onChange={(e) => {
+                        setLocalZone(e.target.value);
+                        applyFilters({ zone_id: e.target.value });
+                    }}
                 >
                     <option value="">Todas las zonas</option>
                     {zones.map((z) => (
@@ -99,13 +110,16 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                 </Select>
 
                 {(localCarrier || localZone) && (
-                    <Btn variant="secondary" size="sm" onClick={() => { setLocalCarrier(""); setLocalZone(""); }}>
+                    <Btn variant="secondary" size="sm" onClick={() => {
+                        setLocalCarrier(""); setLocalZone("");
+                        applyFilters({ carrier_id: "", zone_id: "" });
+                    }}>
                         Limpiar filtros
                     </Btn>
                 )}
 
                 <span className="ml-auto self-center text-sm text-ink-500">
-                    {filtered.length} tarifa{filtered.length !== 1 ? "s" : ""}
+                    {rates.total} tarifa{rates.total !== 1 ? "s" : ""}
                 </span>
             </div>
 
@@ -122,16 +136,13 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                             </Tr>
                         );
                     }
-
                     const r = item.data;
                     return (
                         <Tr key={item.key}>
                             <Td className="font-semibold">{r.zone_name}</Td>
                             <Td className="text-ink-500">{r.country_name}</Td>
                             <Td>{r.pallet_type_name}</Td>
-                            <Td>
-                                <span className="tabular-nums">{r.min_pallets}–{r.max_pallets}</span>
-                            </Td>
+                            <Td><span className="tabular-nums">{r.min_pallets}–{r.max_pallets}</span></Td>
                             <Td className="text-ink-500 text-xs">{r.carrier_rate_name || <span className="text-ink-300">—</span>}</Td>
                             <Td className="font-extrabold tabular-nums">{Number(r.price_eur).toFixed(2)} €</Td>
                             <Td right>
@@ -145,36 +156,30 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                 })}
             </Table>
 
+            <Pagination pagination={rates} onPageChange={goToPage} />
+
             <Modal open={modalOpen} title={editing ? "Editar tarifa" : "Nueva tarifa"} onClose={closeModal} size="lg">
                 <form onSubmit={submit} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="Transportista" error={errors.carrier_id} required>
                             <Select value={data.carrier_id} onChange={(e) => setData("carrier_id", e.target.value)}>
                                 <option value="">Selecciona…</option>
-                                {carriers.map((c) => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
+                                {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </Select>
                         </Field>
                         <Field label="Zona" error={errors.zone_id} required>
                             <Select value={data.zone_id} onChange={(e) => setData("zone_id", e.target.value)}>
                                 <option value="">Selecciona…</option>
-                                {zones.map((z) => (
-                                    <option key={z.id} value={z.id}>{z.country_name} — {z.name}</option>
-                                ))}
+                                {zones.map((z) => <option key={z.id} value={z.id}>{z.country_name} — {z.name}</option>)}
                             </Select>
                         </Field>
                     </div>
-
                     <Field label="Tipo de pallet" error={errors.pallet_type_id} required>
                         <Select value={data.pallet_type_id} onChange={(e) => setData("pallet_type_id", e.target.value)}>
                             <option value="">Selecciona…</option>
-                            {palletTypes.map((pt) => (
-                                <option key={pt.id} value={pt.id}>{pt.name}</option>
-                            ))}
+                            {palletTypes.map((pt) => <option key={pt.id} value={pt.id}>{pt.name}</option>)}
                         </Select>
                     </Field>
-
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="Pallets mínimo" error={errors.min_pallets} required>
                             <Input type="number" min="1" value={data.min_pallets} onChange={(e) => setData("min_pallets", e.target.value)} />
@@ -183,7 +188,6 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                             <Input type="number" min="1" value={data.max_pallets} onChange={(e) => setData("max_pallets", e.target.value)} />
                         </Field>
                     </div>
-
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="Precio (€)" error={errors.price_eur} required>
                             <Input type="number" min="0" step="0.01" value={data.price_eur} onChange={(e) => setData("price_eur", e.target.value)} />
@@ -192,7 +196,6 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                             <Input value={data.carrier_rate_name} onChange={(e) => setData("carrier_rate_name", e.target.value)} placeholder="Opcional" />
                         </Field>
                     </div>
-
                     <div className="flex justify-end gap-2 pt-2">
                         <Btn type="button" variant="secondary" onClick={closeModal}>Cancelar</Btn>
                         <Btn type="submit" disabled={processing}>

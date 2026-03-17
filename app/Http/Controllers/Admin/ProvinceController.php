@@ -9,16 +9,26 @@ use Inertia\Inertia;
 
 class ProvinceController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $provinces = DB::table('provinces as p')
+        $query = DB::table('provinces as p')
             ->join('zones as z', 'z.id', '=', 'p.zone_id')
             ->join('countries as c', 'c.id', '=', 'z.country_id')
             ->orderBy('c.name')
             ->orderBy('z.name')
             ->orderBy('p.name')
-            ->select('p.id', 'p.name', 'p.zone_id', 'z.name as zone_name', 'c.name as country_name')
-            ->get();
+            ->select('p.id', 'p.name', 'p.zone_id', 'z.name as zone_name', 'c.name as country_name');
+
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('p.name', 'like', $search)
+                  ->orWhere('z.name', 'like', $search)
+                  ->orWhere('c.name', 'like', $search);
+            });
+        }
+
+        $provinces = $query->paginate(25)->withQueryString();
 
         $zones = DB::table('zones as z')
             ->join('countries as c', 'c.id', '=', 'z.country_id')
@@ -30,6 +40,7 @@ class ProvinceController extends Controller
         return Inertia::render('Admin/Provinces', [
             'provinces' => $provinces,
             'zones'     => $zones,
+            'filters'   => $request->only(['search']),
         ]);
     }
 

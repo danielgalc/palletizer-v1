@@ -9,23 +9,37 @@ use Inertia\Inertia;
 
 class DeviceModelController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $models = DB::table('device_models as dm')
+        $query = DB::table('device_models as dm')
             ->join('box_types as bt', 'bt.id', '=', 'dm.box_type_id')
             ->orderBy('dm.brand')
             ->orderBy('dm.name')
             ->select(
                 'dm.id', 'dm.brand', 'dm.name', 'dm.sku', 'dm.weight_kg', 'dm.is_active',
                 'dm.box_type_id', 'bt.name as box_type_name', 'bt.code as box_type_code'
-            )
-            ->get();
+            );
 
+        if ($request->filled('search')) {
+            $search = '%' . $request->search . '%';
+            $query->where(function ($q) use ($search) {
+                $q->where('dm.name', 'like', $search)
+                  ->orWhere('dm.brand', 'like', $search)
+                  ->orWhere('dm.sku', 'like', $search);
+            });
+        }
+
+        if ($request->filled('box_type_id')) {
+            $query->where('dm.box_type_id', $request->box_type_id);
+        }
+
+        $models   = $query->paginate(25)->withQueryString();
         $boxTypes = DB::table('box_types')->orderBy('name')->get();
 
         return Inertia::render('Admin/DeviceModels', [
             'models'   => $models,
             'boxTypes' => $boxTypes,
+            'filters'  => $request->only(['search', 'box_type_id']),
         ]);
     }
 

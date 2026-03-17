@@ -1,20 +1,45 @@
-import React, { useState, useMemo } from "react";
-import { useForm } from "@inertiajs/react";
+import React, { useState, useCallback } from "react";
+import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
     Btn, Field, Input, Select, Modal, ConfirmDialog,
-    Table, Tr, Td, PageHeader,
+    Table, Tr, Td, PageHeader, Pagination,
 } from "@/Components/Admin/Ui";
 
 const EMPTY = { name: "", zone_id: "" };
 
-export default function Provinces({ provinces, zones }) {
+function useDebounce(fn, delay = 400) {
+    const timer = React.useRef(null);
+    return useCallback((...args) => {
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => fn(...args), delay);
+    }, [fn]);
+}
+
+export default function Provinces({ provinces, zones, filters }) {
     const [modalOpen, setModalOpen]       = useState(false);
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const [search, setSearch]             = useState("");
+    const [search, setSearch]             = useState(filters?.search ?? "");
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
+
+    const doSearch = useDebounce((value) => {
+        router.get("/admin/provinces", { search: value || undefined }, {
+            preserveState: true, preserveScroll: true, replace: true,
+        });
+    });
+
+    const handleSearch = (e) => {
+        setSearch(e.target.value);
+        doSearch(e.target.value);
+    };
+
+    const goToPage = (page) => {
+        router.get("/admin/provinces", { ...filters, page }, {
+            preserveState: true, preserveScroll: true,
+        });
+    };
 
     const openCreate = () => { reset(); clearErrors(); setEditing(null); setModalOpen(true); };
     const openEdit   = (p) => {
@@ -32,24 +57,6 @@ export default function Provinces({ provinces, zones }) {
             : post("/admin/provinces", opts);
     };
 
-    const confirmDelete = () => {
-        destroy(`/admin/provinces/${deleteTarget.id}`, {
-            preserveScroll: true,
-            onSuccess: () => setDeleteTarget(null),
-        });
-    };
-
-    const filtered = useMemo(() => {
-        const q = search.toLowerCase().trim();
-        if (!q) return provinces;
-        return provinces.filter(
-            (p) =>
-                p.name.toLowerCase().includes(q) ||
-                p.zone_name?.toLowerCase().includes(q) ||
-                p.country_name?.toLowerCase().includes(q)
-        );
-    }, [provinces, search]);
-
     return (
         <AdminLayout title="Provincias">
             <PageHeader
@@ -58,19 +65,18 @@ export default function Provinces({ provinces, zones }) {
                 action={<Btn onClick={openCreate}>+ Nueva provincia</Btn>}
             />
 
-            {/* Buscador */}
             <div className="mb-4">
-                <input
+                <Input
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={handleSearch}
                     placeholder="Buscar por nombre, zona o país…"
-                    className="w-full max-w-sm rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+                    className="max-w-sm"
                 />
             </div>
 
             <Table headers={["Provincia", "Zona", "País", "Acciones"]}
                    empty="No hay provincias que coincidan con la búsqueda.">
-                {filtered.map((p) => (
+                {provinces.data.map((p) => (
                     <Tr key={p.id}>
                         <Td className="font-semibold">{p.name}</Td>
                         <Td>{p.zone_name}</Td>
@@ -85,6 +91,8 @@ export default function Provinces({ provinces, zones }) {
                 ))}
             </Table>
 
+            <Pagination pagination={provinces} onPageChange={goToPage} />
+
             <Modal open={modalOpen} title={editing ? "Editar provincia" : "Nueva provincia"} onClose={closeModal}>
                 <form onSubmit={submit} className="space-y-4">
                     <Field label="Nombre" error={errors.name} required>
@@ -94,12 +102,8 @@ export default function Provinces({ provinces, zones }) {
                             placeholder="Madrid"
                         />
                     </Field>
-
                     <Field label="Zona" error={errors.zone_id} required>
-                        <Select
-                            value={data.zone_id}
-                            onChange={(e) => setData("zone_id", e.target.value)}
-                        >
+                        <Select value={data.zone_id} onChange={(e) => setData("zone_id", e.target.value)}>
                             <option value="">Selecciona una zona…</option>
                             {zones.map((z) => (
                                 <option key={z.id} value={z.id}>
@@ -108,7 +112,6 @@ export default function Provinces({ provinces, zones }) {
                             ))}
                         </Select>
                     </Field>
-
                     <div className="flex justify-end gap-2 pt-2">
                         <Btn type="button" variant="secondary" onClick={closeModal}>Cancelar</Btn>
                         <Btn type="submit" disabled={processing}>
@@ -122,7 +125,9 @@ export default function Provinces({ provinces, zones }) {
                 open={!!deleteTarget}
                 title="¿Eliminar provincia?"
                 message={`Se eliminará la provincia "${deleteTarget?.name}".`}
-                onConfirm={confirmDelete}
+                onConfirm={() => destroy(`/admin/provinces/${deleteTarget.id}`, {
+                    preserveScroll: true, onSuccess: () => setDeleteTarget(null),
+                })}
                 onCancel={() => setDeleteTarget(null)}
                 loading={processing}
             />

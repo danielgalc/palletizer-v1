@@ -244,7 +244,84 @@ export function PageHeader({ title, description, action }) {
     );
 }
 
-// ─── Hook para gestionar un formulario local (sin Inertia useForm) ────────────
+// ─── Paginación ───────────────────────────────────────────────────────────────
+// Recibe el objeto `pagination` que devuelve Laravel (paginate(25))
+// con: current_page, last_page, total, per_page
+
+export function Pagination({ pagination, onPageChange }) {
+    if (!pagination || pagination.last_page <= 1) return null;
+
+    const { current_page, last_page, total, per_page } = pagination;
+
+    const from = (current_page - 1) * per_page + 1;
+    const to   = Math.min(current_page * per_page, total);
+
+    // Genera el rango de páginas visible: siempre muestra 5 páginas centradas en la actual
+    const pages = [];
+    const delta = 2;
+    const left  = Math.max(1, current_page - delta);
+    const right = Math.min(last_page, current_page + delta);
+
+    if (left > 1) {
+        pages.push(1);
+        if (left > 2) pages.push("...");
+    }
+    for (let i = left; i <= right; i++) pages.push(i);
+    if (right < last_page) {
+        if (right < last_page - 1) pages.push("...");
+        pages.push(last_page);
+    }
+
+    return (
+        <div className="mt-4 flex items-center justify-between gap-4">
+            <p className="text-xs text-ink-500">
+                Mostrando <b>{from}–{to}</b> de <b>{total}</b> registros
+            </p>
+
+            <div className="flex items-center gap-1">
+                <button
+                    type="button"
+                    onClick={() => onPageChange(current_page - 1)}
+                    disabled={current_page === 1}
+                    className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                    ←
+                </button>
+
+                {pages.map((p, i) =>
+                    p === "..." ? (
+                        <span key={`dots-${i}`} className="px-1 text-xs text-ink-400">…</span>
+                    ) : (
+                        <button
+                            key={p}
+                            type="button"
+                            onClick={() => onPageChange(p)}
+                            className={[
+                                "rounded-lg border px-3 py-1.5 text-xs font-semibold transition",
+                                p === current_page
+                                    ? "border-ink-900 bg-ink-900 text-white"
+                                    : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50",
+                            ].join(" ")}
+                        >
+                            {p}
+                        </button>
+                    )
+                )}
+
+                <button
+                    type="button"
+                    onClick={() => onPageChange(current_page + 1)}
+                    disabled={current_page === last_page}
+                    className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                    →
+                </button>
+            </div>
+        </div>
+    );
+}
+
+
 // Útil para los modales que hacen fetch directamente.
 
 export function useLocalForm(initial) {

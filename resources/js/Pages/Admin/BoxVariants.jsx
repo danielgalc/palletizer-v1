@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from "react";
-import { useForm } from "@inertiajs/react";
+import React, { useState } from "react";
+import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
     Btn, Field, Input, Select, Modal, ConfirmDialog,
-    Table, Tr, Td, PageHeader, Badge,
+    Table, Tr, Td, PageHeader, Badge, Pagination,
 } from "@/Components/Admin/Ui";
 
 const EMPTY = {
@@ -17,13 +17,26 @@ const KIND_LABELS = {
 };
 const COND_LABELS = { new: "Nueva", reused: "Reutilizada" };
 
-export default function BoxVariants({ variants, providers }) {
+export default function BoxVariants({ variants, providers, filters }) {
     const [modalOpen, setModalOpen]       = useState(false);
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const [filterKind, setFilterKind]     = useState("");
+    const [filterKind, setFilterKind]     = useState(filters?.kind ?? "");
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
+
+    const handleKindFilter = (kind) => {
+        setFilterKind(kind);
+        router.get("/admin/box-variants", { kind: kind || undefined }, {
+            preserveState: true, preserveScroll: true, replace: true,
+        });
+    };
+
+    const goToPage = (page) => {
+        router.get("/admin/box-variants", { kind: filterKind || undefined, page }, {
+            preserveState: true, preserveScroll: true,
+        });
+    };
 
     const openCreate = () => { reset(); clearErrors(); setEditing(null); setModalOpen(true); };
     const openEdit   = (v) => {
@@ -46,11 +59,6 @@ export default function BoxVariants({ variants, providers }) {
             : post("/admin/box-variants", opts);
     };
 
-    const filtered = useMemo(() =>
-        filterKind ? variants.filter((v) => v.kind === filterKind) : variants,
-        [variants, filterKind]
-    );
-
     return (
         <AdminLayout title="Variantes de caja">
             <PageHeader
@@ -59,13 +67,12 @@ export default function BoxVariants({ variants, providers }) {
                 action={<Btn onClick={openCreate}>+ Nueva variante</Btn>}
             />
 
-            {/* Filtro por tipo */}
             <div className="mb-4 flex flex-wrap gap-2">
                 {["", "laptop", "tower", "tower_sff", "mini_pc"].map((k) => (
                     <button
                         key={k}
                         type="button"
-                        onClick={() => setFilterKind(k)}
+                        onClick={() => handleKindFilter(k)}
                         className={[
                             "rounded-xl px-3 py-1.5 text-xs font-extrabold transition",
                             filterKind === k
@@ -76,30 +83,21 @@ export default function BoxVariants({ variants, providers }) {
                         {k ? KIND_LABELS[k] : "Todos"}
                     </button>
                 ))}
+                <span className="ml-auto self-center text-sm text-ink-500">
+                    {variants.total} variante{variants.total !== 1 ? "s" : ""}
+                </span>
             </div>
 
             <Table headers={["Tipo", "Condición", "Proveedor", "Dimensiones (cm)", "€/caja", "Stock", "Activa", "Acciones"]}>
-                {filtered.map((v) => (
+                {variants.data.map((v) => (
                     <Tr key={v.id}>
                         <Td><Badge color="gray">{KIND_LABELS[v.kind] ?? v.kind}</Badge></Td>
-                        <Td>
-                            <Badge color={v.condition === "new" ? "blue" : "yellow"}>
-                                {COND_LABELS[v.condition] ?? v.condition}
-                            </Badge>
-                        </Td>
+                        <Td><Badge color={v.condition === "new" ? "blue" : "yellow"}>{COND_LABELS[v.condition] ?? v.condition}</Badge></Td>
                         <Td>{v.provider_name}</Td>
                         <Td>{v.length_cm} × {v.width_cm} × {v.height_cm}</Td>
                         <Td>{Number(v.unit_cost_eur) > 0 ? `${Number(v.unit_cost_eur).toFixed(2)} €` : <span className="text-ink-400">—</span>}</Td>
-                        <Td>
-                            <Badge color={v.on_hand_qty > 0 ? "green" : "red"}>
-                                {v.on_hand_qty > 0 ? v.on_hand_qty : "Sin stock"}
-                            </Badge>
-                        </Td>
-                        <Td>
-                            <Badge color={v.is_active ? "green" : "gray"}>
-                                {v.is_active ? "Sí" : "No"}
-                            </Badge>
-                        </Td>
+                        <Td><Badge color={v.on_hand_qty > 0 ? "green" : "red"}>{v.on_hand_qty > 0 ? v.on_hand_qty : "Sin stock"}</Badge></Td>
+                        <Td><Badge color={v.is_active ? "green" : "gray"}>{v.is_active ? "Sí" : "No"}</Badge></Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
                                 <Btn size="sm" variant="secondary" onClick={() => openEdit(v)}>Editar</Btn>
@@ -109,6 +107,8 @@ export default function BoxVariants({ variants, providers }) {
                     </Tr>
                 ))}
             </Table>
+
+            <Pagination pagination={variants} onPageChange={goToPage} />
 
             <Modal open={modalOpen} title={editing ? "Editar variante" : "Nueva variante"} onClose={closeModal} size="lg">
                 <form onSubmit={submit} className="space-y-4">
@@ -128,16 +128,12 @@ export default function BoxVariants({ variants, providers }) {
                             </Select>
                         </Field>
                     </div>
-
                     <Field label="Proveedor" error={errors.provider_id} required>
                         <Select value={data.provider_id} onChange={(e) => setData("provider_id", e.target.value)} disabled={!!editing}>
                             <option value="">Selecciona proveedor…</option>
-                            {providers.map((p) => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
+                            {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </Select>
                     </Field>
-
                     <div className="grid grid-cols-3 gap-4">
                         <Field label="Largo (cm)" error={errors.length_cm} required>
                             <Input type="number" min="1" value={data.length_cm} onChange={(e) => setData("length_cm", e.target.value)} />
@@ -149,7 +145,6 @@ export default function BoxVariants({ variants, providers }) {
                             <Input type="number" min="1" value={data.height_cm} onChange={(e) => setData("height_cm", e.target.value)} />
                         </Field>
                     </div>
-
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="Coste unitario (€)" error={errors.unit_cost_eur} required>
                             <Input type="number" min="0" step="0.0001" value={data.unit_cost_eur} onChange={(e) => setData("unit_cost_eur", e.target.value)} />
@@ -158,19 +153,12 @@ export default function BoxVariants({ variants, providers }) {
                             <Input type="number" min="0" value={data.on_hand_qty} onChange={(e) => setData("on_hand_qty", e.target.value)} />
                         </Field>
                     </div>
-
                     <Field label="Estado">
                         <label className="flex items-center gap-2 text-sm text-ink-800">
-                            <input
-                                type="checkbox"
-                                checked={data.is_active}
-                                onChange={(e) => setData("is_active", e.target.checked)}
-                                className="h-4 w-4 rounded border-ink-300 text-brand-500"
-                            />
+                            <input type="checkbox" checked={data.is_active} onChange={(e) => setData("is_active", e.target.checked)} className="h-4 w-4 rounded border-ink-300 text-brand-500" />
                             Activa (visible en el Palletizer)
                         </label>
                     </Field>
-
                     <div className="flex justify-end gap-2 pt-2">
                         <Btn type="button" variant="secondary" onClick={closeModal}>Cancelar</Btn>
                         <Btn type="submit" disabled={processing}>
