@@ -4,11 +4,27 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class MasterDataSeeder extends Seeder
 {
     public function run(): void
     {
+        // ─────────────────────────────────────────────────────────────────────
+        // USUARIO ADMIN
+        // ─────────────────────────────────────────────────────────────────────
+        DB::table('users')->upsert([
+            [
+                'name'              => 'Admin',
+                'email'             => 'admin@palletizer.local',
+                'password'          => Hash::make('password'),
+                'role'              => 'admin',
+                'email_verified_at' => now(),
+                'created_at'        => now(),
+                'updated_at'        => now(),
+            ],
+        ], ['email'], ['name', 'role', 'updated_at']);
+
         // ─────────────────────────────────────────────────────────────────────
         // BOX TYPES
         // tower_sff = Small Form Factor (SFF/Slim): Dell SFF, HP SFF, Lenovo S
