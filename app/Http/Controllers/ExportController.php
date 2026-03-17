@@ -106,11 +106,15 @@ class ExportController extends Controller
         $summary = $spreadsheet->getActiveSheet();
         $summary->setTitle('Resumen');
 
-        $this->styleTitle($summary, 'A1', 'Palletizer · Export plan óptimo');
-        $summary->setCellValue('A2', "Generado: {$exportedAt}");
+        $this->styleTitle($summary, 'A1', 'Palletizer · Plan óptimo de paletización');
+        $summary->setCellValue('A2', 'Pulsia');
+        $summary->getStyle('A2')->getFont()->setSize(11)->setBold(false)->getColor()->setRGB('6B7280');
+        $summary->setCellValue('B2', "Generado: {$exportedAt}");
+        $summary->getStyle('B2')->getFont()->getColor()->setRGB('6B7280');
 
-        // Bloque info
+        // Bloque info — etiquetas en negrita
         $row = 4;
+        $infoStart = $row;
         $summary->setCellValue("A{$row}", 'Provincia');
         $summary->setCellValue("B{$row}", (string)($province->name ?? ''));
         $row++;
@@ -139,7 +143,21 @@ class ExportController extends Controller
 
         $summary->setCellValue("A{$row}", 'Descripción');
         $summary->setCellValue("B{$row}", (string)($best['pallet_type_name'] ?? ''));
+        $infoEnd = $row;
         $row += 2;
+
+        // Estilo del bloque info: etiquetas en gris oscuro y negrita
+        for ($ir = $infoStart; $ir <= $infoEnd; $ir++) {
+            $summary->getStyle("A{$ir}")->getFont()->setBold(true)->getColor()->setRGB('374151');
+            $summary->getStyle("A{$ir}:B{$ir}")->getAlignment()
+                ->setVertical(Alignment::VERTICAL_CENTER);
+            // Fila alterna muy suave
+            if (($ir - $infoStart) % 2 === 1) {
+                $summary->getStyle("A{$ir}:B{$ir}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('F8F9FB');
+            }
+        }
 
         // Desglose mixto
         if ($isMixed && !empty($mixTypes)) {
@@ -200,7 +218,9 @@ class ExportController extends Controller
         $palletSheet = $spreadsheet->createSheet();
         $palletSheet->setTitle('Pallets');
 
-        $this->styleTitle($palletSheet, 'A1', 'Detalle por pallet');
+        $this->styleTitle($palletSheet, 'A1', 'Pallets · Detalle por pallet');
+        $palletSheet->setCellValue('A2', "Generado: {$exportedAt}");
+        $palletSheet->getStyle('A2')->getFont()->getColor()->setRGB('6B7280');
 
         $headers = ['#', 'Torres MT', 'Torres SFF', 'Portátiles', 'Mini PCs', 'Sep. mezcla', 'Sep. seguridad', 'Altura libre (cm)', 'Peso libre (kg)', 'Capas'];
         $palletSheet->fromArray($headers, null, 'A3');
@@ -208,15 +228,14 @@ class ExportController extends Controller
         $this->setAutoFilterAndFreeze($palletSheet, 'A3:J3', 'A4');
 
         $r = 4;
+        $totals = ['tower' => 0, 'tower_sff' => 0, 'laptop' => 0, 'mini_pc' => 0, 'mixSeps' => 0, 'secSeps' => 0, 'layers' => 0];
+
         foreach ($bestPallets as $i => $p) {
             $layers  = is_array($p['layers'] ?? null) ? $p['layers'] : [];
             $boxes   = is_array($p['boxes']  ?? null) ? $p['boxes']  : [];
 
-            // Contar separadores de seguridad (tipo especial en layers)
-            $secSeps = count(array_filter($layers, fn($l) => !empty($l['security_separator'])));
-            // Separadores de mezcla (capas con separator=true)
-            $mixSeps = count(array_filter($layers, fn($l) => !empty($l['separator']) && empty($l['security_separator'])));
-            // Capas reales (sin separadores de seguridad)
+            $secSeps    = count(array_filter($layers, fn($l) => !empty($l['security_separator'])));
+            $mixSeps    = count(array_filter($layers, fn($l) => !empty($l['separator']) && empty($l['security_separator'])));
             $realLayers = count(array_filter($layers, fn($l) => empty($l['security_separator'])));
 
             $heightLeft = (int)($p['remaining_capacity']['height_cm_left']
@@ -233,14 +252,62 @@ class ExportController extends Controller
             $palletSheet->setCellValue("H{$r}", $heightLeft);
             $palletSheet->setCellValue("I{$r}", $weightLeft);
             $palletSheet->setCellValue("J{$r}", $realLayers);
+
+            // Fila alterna: gris muy claro en filas pares (i es 0-based)
+            if ($i % 2 === 1) {
+                $palletSheet->getStyle("A{$r}:J{$r}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('F8F9FB');
+            }
+
+            // Acumular totales
+            $totals['tower']     += (int)($boxes['tower']     ?? 0);
+            $totals['tower_sff'] += (int)($boxes['tower_sff'] ?? 0);
+            $totals['laptop']    += (int)($boxes['laptop']    ?? 0);
+            $totals['mini_pc']   += (int)($boxes['mini_pc']   ?? 0);
+            $totals['mixSeps']   += $mixSeps;
+            $totals['secSeps']   += $secSeps;
+            $totals['layers']    += $realLayers;
+
             $r++;
         }
 
+        // Fila de totales
         if ($r > 4) {
             $this->num2Format($palletSheet, "I4:I" . ($r - 1), 'kg');
+
+            $palletSheet->setCellValue("A{$r}", 'TOTAL');
+            $palletSheet->setCellValue("B{$r}", $totals['tower']);
+            $palletSheet->setCellValue("C{$r}", $totals['tower_sff']);
+            $palletSheet->setCellValue("D{$r}", $totals['laptop']);
+            $palletSheet->setCellValue("E{$r}", $totals['mini_pc']);
+            $palletSheet->setCellValue("F{$r}", $totals['mixSeps']);
+            $palletSheet->setCellValue("G{$r}", $totals['secSeps']);
+            $palletSheet->setCellValue("J{$r}", $totals['layers']);
+
+            $palletSheet->getStyle("A{$r}:J{$r}")->applyFromArray([
+                'font' => ['bold' => true],
+                'fill' => [
+                    'fillType'   => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'F3F5F9'],
+                ],
+                'borders' => [
+                    'top' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D6DCE7']],
+                ],
+            ]);
         }
 
-        $this->autosizeColumns($palletSheet, ['A','B','C','D','E','F','G','H','I','J']);
+        // Anchos afinados para la hoja Pallets
+        $palletSheet->getColumnDimension('A')->setWidth(8);   // #
+        $palletSheet->getColumnDimension('B')->setWidth(11);  // Torres MT
+        $palletSheet->getColumnDimension('C')->setWidth(11);  // Torres SFF
+        $palletSheet->getColumnDimension('D')->setWidth(11);  // Portátiles
+        $palletSheet->getColumnDimension('E')->setWidth(10);  // Mini PCs
+        $palletSheet->getColumnDimension('F')->setWidth(13);  // Sep. mezcla
+        $palletSheet->getColumnDimension('G')->setWidth(15);  // Sep. seguridad
+        $palletSheet->getColumnDimension('H')->setWidth(17);  // Altura libre
+        $palletSheet->getColumnDimension('I')->setWidth(15);  // Peso libre
+        $palletSheet->getColumnDimension('J')->setWidth(8);   // Capas
 
         // ======================
         // HOJA 3: CAPAS
@@ -248,7 +315,9 @@ class ExportController extends Controller
         $layerSheet = $spreadsheet->createSheet();
         $layerSheet->setTitle('Capas');
 
-        $this->styleTitle($layerSheet, 'A1', 'Detalle por capa');
+        $this->styleTitle($layerSheet, 'A1', 'Capas · Detalle por capa');
+        $layerSheet->setCellValue('A2', "Generado: {$exportedAt}");
+        $layerSheet->getStyle('A2')->getFont()->getColor()->setRGB('6B7280');
 
         $headers = ['Pallet #', 'Capa #', 'Tipo', 'Torres MT', 'Torres SFF', 'Portátiles', 'Mini PCs', 'Vertical', 'Altura (cm)', 'Peso (kg)', 'Sep. mezcla', 'Sep. seguridad'];
         $layerSheet->fromArray($headers, null, 'A3');
@@ -256,12 +325,14 @@ class ExportController extends Controller
         $this->setAutoFilterAndFreeze($layerSheet, 'A3:L3', 'A4');
 
         $r = 4;
-        $layerNum = 0; // número de capa visible (sin contar separadores de seguridad)
+        $layerNum    = 0;
+        $dataRowNum  = 0; // contador solo de filas de datos (no separadores) para alternar color
+
         foreach ($bestPallets as $pi => $p) {
             $layers = is_array($p['layers'] ?? null) ? $p['layers'] : [];
             $layerNum = 0;
             foreach ($layers as $layer) {
-                // Separador de seguridad: fila especial sin conteo de capa
+                // Separador de seguridad: fila especial en amarillo
                 if (!empty($layer['security_separator'])) {
                     $layerSheet->setCellValue("A{$r}", $pi + 1);
                     $layerSheet->setCellValue("B{$r}", '—');
@@ -269,26 +340,19 @@ class ExportController extends Controller
                     $layerSheet->getStyle("A{$r}:L{$r}")->getFont()->setItalic(true);
                     $layerSheet->getStyle("A{$r}:L{$r}")->getFill()
                         ->setFillType(Fill::FILL_SOLID)
-                        ->getStartColor()->setRGB('FEF9C3'); // amarillo suave
+                        ->getStartColor()->setRGB('FEF9C3');
                     $r++;
                     continue;
                 }
 
                 $layerNum++;
+                $dataRowNum++;
 
-                // Conteo de cajas usando el helper de lógica equivalente al frontend
                 $counts = $this->layerCounts($layer);
 
-                // Cajas verticales (suma por tipo)
-                $vertCounts = ['tower' => 0, 'tower_sff' => 0, 'laptop' => 0, 'mini_pc' => 0];
-                $vertTotal  = 0;
+                $vertTotal = 0;
                 foreach (($layer['vertical'] ?? []) as $v) {
-                    $vt = $v['type'] ?? null;
-                    $vc = (int)($v['count'] ?? 0);
-                    if ($vt && array_key_exists($vt, $vertCounts)) {
-                        $vertCounts[$vt] += $vc;
-                        $vertTotal       += $vc;
-                    }
+                    $vertTotal += (int)($v['count'] ?? 0);
                 }
 
                 $typeLabels = ['tower' => 'Torre MT', 'tower_sff' => 'Torre SFF', 'laptop' => 'Portátil', 'mini_pc' => 'Mini PC'];
@@ -305,7 +369,15 @@ class ExportController extends Controller
                 $layerSheet->setCellValue("I{$r}", (int)($layer['height_cm']  ?? 0));
                 $layerSheet->setCellValue("J{$r}", (float)($layer['weight_kg'] ?? 0));
                 $layerSheet->setCellValue("K{$r}", !empty($layer['separator']) ? 'Sí' : 'No');
-                $layerSheet->setCellValue("L{$r}", 'No'); // seguridad se representa como fila propia
+                $layerSheet->setCellValue("L{$r}", 'No');
+
+                // Filas alternas en gris muy claro (solo en filas de datos, no separadores)
+                if ($dataRowNum % 2 === 0) {
+                    $layerSheet->getStyle("A{$r}:L{$r}")->getFill()
+                        ->setFillType(Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB('F8F9FB');
+                }
+
                 $r++;
             }
         }
@@ -314,7 +386,19 @@ class ExportController extends Controller
             $this->num2Format($layerSheet, "J4:J" . ($r - 1), 'kg');
         }
 
-        $this->autosizeColumns($layerSheet, ['A','B','C','D','E','F','G','H','I','J','K','L']);
+        // Anchos afinados para la hoja Capas
+        $layerSheet->getColumnDimension('A')->setWidth(10);   // Pallet #
+        $layerSheet->getColumnDimension('B')->setWidth(8);    // Capa #
+        $layerSheet->getColumnDimension('C')->setWidth(14);   // Tipo
+        $layerSheet->getColumnDimension('D')->setWidth(11);   // Torres MT
+        $layerSheet->getColumnDimension('E')->setWidth(11);   // Torres SFF
+        $layerSheet->getColumnDimension('F')->setWidth(11);   // Portátiles
+        $layerSheet->getColumnDimension('G')->setWidth(10);   // Mini PCs
+        $layerSheet->getColumnDimension('H')->setWidth(9);    // Vertical
+        $layerSheet->getColumnDimension('I')->setWidth(12);   // Altura
+        $layerSheet->getColumnDimension('J')->setWidth(11);   // Peso
+        $layerSheet->getColumnDimension('K')->setWidth(12);   // Sep. mezcla
+        $layerSheet->getColumnDimension('L')->setWidth(15);   // Sep. seguridad
 
         // ======================
         // HOJA 4: MODELOS
@@ -325,7 +409,9 @@ class ExportController extends Controller
             $modelSheet = $spreadsheet->createSheet();
             $modelSheet->setTitle('Modelos');
 
-            $this->styleTitle($modelSheet, 'A1', 'Modelos incluidos en el envío');
+            $this->styleTitle($modelSheet, 'A1', 'Modelos · Dispositivos incluidos en el envío');
+            $modelSheet->setCellValue('A2', "Generado: {$exportedAt}");
+            $modelSheet->getStyle('A2')->getFont()->getColor()->setRGB('6B7280');
 
             $modelSheet->fromArray(['Marca', 'Modelo', 'Tipo de caja', 'Uds.'], null, 'A3');
             $this->styleHeaderRow($modelSheet, 'A3:D3');
