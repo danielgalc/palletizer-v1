@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useForm } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader, Badge,
 } from "@/Components/Admin/Ui";
 
@@ -63,8 +63,8 @@ export default function Carriers({ carriers }) {
                         </Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
-                                <Btn size="sm" variant="secondary" onClick={() => openEdit(c)}>Editar</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(c)}>Eliminar</Btn>
+                                <ActionBtn type="edit" onClick={() => openEdit(c)} />
+                                <ActionBtn type="delete" onClick={() => setDeleteTarget(c)} />
                             </div>
                         </Td>
                     </Tr>

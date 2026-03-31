@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from "react";
 import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Select, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Select, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader, Badge, Pagination,
 } from "@/Components/Admin/Ui";
 
@@ -127,8 +127,8 @@ export default function DeviceModels({ models, boxTypes, filters }) {
                         <Td><Badge color={m.is_active ? "green" : "red"}>{m.is_active ? "Activo" : "Inactivo"}</Badge></Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
-                                <Btn size="sm" variant="secondary" onClick={() => openEdit(m)}>Editar</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(m)}>Eliminar</Btn>
+                                <ActionBtn type="edit" onClick={() => openEdit(m)} />
+                                <ActionBtn type="delete" onClick={() => setDeleteTarget(m)} />
                             </div>
                         </Td>
                     </Tr>

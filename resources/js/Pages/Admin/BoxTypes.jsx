@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useForm } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader,
 } from "@/Components/Admin/Ui";
 
@@ -63,8 +63,8 @@ export default function BoxTypes({ boxTypes }) {
                         </Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
-                                <Btn size="sm" variant="secondary" onClick={() => openEdit(b)}>Editar</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(b)}>Eliminar</Btn>
+                                <ActionBtn type="edit" onClick={() => openEdit(b)} />
+                                <ActionBtn type="delete" onClick={() => setDeleteTarget(b)} />
                             </div>
                         </Td>
                     </Tr>

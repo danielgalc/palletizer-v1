@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useForm } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader,
 } from "@/Components/Admin/Ui";
 
@@ -110,8 +110,8 @@ export default function Countries({ countries, zones }) {
                                 <Td right>
                                     <div className="flex justify-end gap-2">
                                         <Btn size="sm" variant="warning" onClick={() => openCreateZone(c)}>+ Zona</Btn>
-                                        <Btn size="sm" variant="secondary" onClick={() => openEditCountry(c)}>Editar</Btn>
-                                        <Btn size="sm" variant="danger" onClick={() => setDeleteCountry(c)}>Eliminar</Btn>
+                                        <ActionBtn type="edit" onClick={() => openEditCountry(c)} />
+                                        <ActionBtn type="delete" onClick={() => setDeleteCountry(c)} />
                                     </div>
                                 </Td>
                             </Tr>
@@ -127,8 +127,8 @@ export default function Countries({ countries, zones }) {
                                     <Td />
                                     <Td right>
                                         <div className="flex justify-end gap-2">
-                                            <Btn size="sm" variant="secondary" onClick={() => openEditZone(z)}>Editar</Btn>
-                                            <Btn size="sm" variant="danger" onClick={() => setDeleteZone(z)}>Eliminar</Btn>
+                                            <ActionBtn type="edit" onClick={() => openEditZone(z)} />
+                                            <ActionBtn type="delete" onClick={() => setDeleteZone(z)} />
                                         </div>
                                     </Td>
                                 </Tr>

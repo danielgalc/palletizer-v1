@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useForm } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader,
 } from "@/Components/Admin/Ui";
 
@@ -67,8 +67,8 @@ export default function PalletTypes({ palletTypes }) {
                         <Td>{pt.max_weight_kg} kg</Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
-                                <Btn size="sm" variant="secondary" onClick={() => openEdit(pt)}>Editar</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(pt)}>Eliminar</Btn>
+                                <ActionBtn type="edit" onClick={() => openEdit(pt)} />
+                                <ActionBtn type="delete" onClick={() => setDeleteTarget(pt)} />
                             </div>
                         </Td>
                     </Tr>

@@ -24,7 +24,6 @@ class RateController extends Controller
                 'pt.id as pallet_type_id', 'pt.name as pallet_type_name'
             );
 
-        // Filtros opcionales
         if ($request->filled('carrier_id')) {
             $query->where('r.carrier_id', $request->carrier_id);
         }
@@ -32,14 +31,27 @@ class RateController extends Controller
             $query->where('r.zone_id', $request->zone_id);
         }
 
-        $rates = $query->orderBy('c.name')->orderBy('co.name')->orderBy('z.name')->orderBy('pt.name')->orderBy('r.min_pallets')->paginate(25)->withQueryString();
+        $rates = $query
+            ->orderBy('c.name')
+            ->orderBy('co.name')
+            ->orderByRaw("CAST(NULLIF(REGEXP_REPLACE(z.name, '[^0-9]', '', 'g'), '') AS INTEGER) NULLS LAST")
+            ->orderBy('z.name')
+            ->orderBy('pt.name')
+            ->orderBy('r.min_pallets')
+            ->paginate(25)
+            ->withQueryString();
 
-        $carriers    = DB::table('carriers')->orderBy('name')->get();
-        $zones       = DB::table('zones as z')
+        $carriers = DB::table('carriers')->orderBy('name')->get();
+
+        // Zonas ordenadas numéricamente dentro de cada país
+        $zones = DB::table('zones as z')
             ->join('countries as c', 'c.id', '=', 'z.country_id')
-            ->orderBy('c.name')->orderBy('z.name')
+            ->orderBy('c.name')
+            ->orderByRaw("CAST(NULLIF(REGEXP_REPLACE(z.name, '[^0-9]', '', 'g'), '') AS INTEGER) NULLS LAST")
+            ->orderBy('z.name')
             ->select('z.id', 'z.name', 'c.name as country_name')
             ->get();
+
         $palletTypes = DB::table('pallet_types')->orderBy('name')->get();
 
         return Inertia::render('Admin/Rates', [
@@ -54,13 +66,13 @@ class RateController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'carrier_id'       => ['required', 'integer', 'exists:carriers,id'],
-            'zone_id'          => ['required', 'integer', 'exists:zones,id'],
-            'pallet_type_id'   => ['required', 'integer', 'exists:pallet_types,id'],
-            'min_pallets'      => ['required', 'integer', 'min:1'],
-            'max_pallets'      => ['required', 'integer', 'min:1', 'gte:min_pallets'],
-            'price_eur'        => ['required', 'numeric', 'min:0'],
-            'carrier_rate_name'=> ['nullable', 'string', 'max:150'],
+            'carrier_id'        => ['required', 'integer', 'exists:carriers,id'],
+            'zone_id'           => ['required', 'integer', 'exists:zones,id'],
+            'pallet_type_id'    => ['required', 'integer', 'exists:pallet_types,id'],
+            'min_pallets'       => ['required', 'integer', 'min:1'],
+            'max_pallets'       => ['required', 'integer', 'min:1', 'gte:min_pallets'],
+            'price_eur'         => ['required', 'numeric', 'min:0'],
+            'carrier_rate_name' => ['nullable', 'string', 'max:150'],
         ]);
 
         DB::table('rates')->insert([...$data, 'created_at' => now(), 'updated_at' => now()]);
@@ -70,13 +82,13 @@ class RateController extends Controller
     public function update(Request $request, int $id)
     {
         $data = $request->validate([
-            'carrier_id'       => ['required', 'integer', 'exists:carriers,id'],
-            'zone_id'          => ['required', 'integer', 'exists:zones,id'],
-            'pallet_type_id'   => ['required', 'integer', 'exists:pallet_types,id'],
-            'min_pallets'      => ['required', 'integer', 'min:1'],
-            'max_pallets'      => ['required', 'integer', 'min:1', 'gte:min_pallets'],
-            'price_eur'        => ['required', 'numeric', 'min:0'],
-            'carrier_rate_name'=> ['nullable', 'string', 'max:150'],
+            'carrier_id'        => ['required', 'integer', 'exists:carriers,id'],
+            'zone_id'           => ['required', 'integer', 'exists:zones,id'],
+            'pallet_type_id'    => ['required', 'integer', 'exists:pallet_types,id'],
+            'min_pallets'       => ['required', 'integer', 'min:1'],
+            'max_pallets'       => ['required', 'integer', 'min:1', 'gte:min_pallets'],
+            'price_eur'         => ['required', 'numeric', 'min:0'],
+            'carrier_rate_name' => ['nullable', 'string', 'max:150'],
         ]);
 
         DB::table('rates')->where('id', $id)->update([...$data, 'updated_at' => now()]);

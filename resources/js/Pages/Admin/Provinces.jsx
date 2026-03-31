@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Select, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Select, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader, Pagination,
 } from "@/Components/Admin/Ui";
 
@@ -83,8 +83,8 @@ export default function Provinces({ provinces, zones, filters }) {
                         <Td className="text-ink-500">{p.country_name}</Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
-                                <Btn size="sm" variant="secondary" onClick={() => openEdit(p)}>Editar</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(p)}>Eliminar</Btn>
+                                <ActionBtn type="edit" onClick={() => openEdit(p)} />
+                                <ActionBtn type="delete" onClick={() => setDeleteTarget(p)} />
                             </div>
                         </Td>
                     </Tr>

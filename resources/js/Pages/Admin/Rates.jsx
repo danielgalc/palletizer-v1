@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Select, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Select, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader, Pagination,
 } from "@/Components/Admin/Ui";
 
@@ -123,7 +123,7 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                 </span>
             </div>
 
-            <Table headers={["Zona", "País", "Tipo pallet", "Tramo", "Nombre tarifa", "€", "Acciones"]}>
+            <Table headers={["Zona", "País", "Tipo pallet", "Pallets (tramo)", "Nombre tarifa", "€", "Acciones"]}>
                 {grouped.map((item) => {
                     if (item.type === "header") {
                         return (
@@ -142,13 +142,19 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                             <Td className="font-semibold">{r.zone_name}</Td>
                             <Td className="text-ink-500">{r.country_name}</Td>
                             <Td>{r.pallet_type_name}</Td>
-                            <Td><span className="tabular-nums">{r.min_pallets}–{r.max_pallets}</span></Td>
+                            <Td>
+                                <span className="tabular-nums text-xs font-semibold text-ink-600 bg-ink-50 rounded-md px-2 py-0.5 ring-1 ring-ink-100">
+                                    {r.min_pallets === r.max_pallets
+                                        ? `${r.min_pallets} unidad${r.min_pallets !== 1 ? "es" : ""}`
+                                        : `${r.min_pallets}–${r.max_pallets} uds.`}
+                                </span>
+                            </Td>
                             <Td className="text-ink-500 text-xs">{r.carrier_rate_name || <span className="text-ink-300">—</span>}</Td>
                             <Td className="font-extrabold tabular-nums">{Number(r.price_eur).toFixed(2)} €</Td>
                             <Td right>
                                 <div className="flex justify-end gap-2">
-                                    <Btn size="sm" variant="secondary" onClick={() => openEdit(r)}>Editar</Btn>
-                                    <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(r)}>Eliminar</Btn>
+                                    <ActionBtn type="edit" onClick={() => openEdit(r)} />
+                                    <ActionBtn type="delete" onClick={() => setDeleteTarget(r)} />
                                 </div>
                             </Td>
                         </Tr>
@@ -181,10 +187,10 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                         </Select>
                     </Field>
                     <div className="grid grid-cols-2 gap-4">
-                        <Field label="Pallets mínimo" error={errors.min_pallets} required>
+                        <Field label="Desde (pallets)" error={errors.min_pallets} required hint="Cantidad mínima del tramo">
                             <Input type="number" min="1" value={data.min_pallets} onChange={(e) => setData("min_pallets", e.target.value)} />
                         </Field>
-                        <Field label="Pallets máximo" error={errors.max_pallets} required>
+                        <Field label="Hasta (pallets)" error={errors.max_pallets} required hint="Cantidad máxima del tramo">
                             <Input type="number" min="1" value={data.max_pallets} onChange={(e) => setData("max_pallets", e.target.value)} />
                         </Field>
                     </div>
