@@ -184,7 +184,7 @@ export default function AdminLayout({ title, children }) {
 
             {/* ── Sidebar ───────────────────────────────────────────────── */}
             <aside className={[
-                "fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-ink-900 transition-transform duration-200 lg:translate-x-0 lg:static lg:z-auto",
+                "fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-ink-900 transition-transform duration-200 lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto",
                 sidebarOpen ? "translate-x-0" : "-translate-x-full",
             ].join(" ")}>
 
@@ -201,11 +201,11 @@ export default function AdminLayout({ title, children }) {
                     </div>
                 </div>
 
-                {/* Nav */}
-                <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+                {/* Nav — min-h-0 es clave: sin él, flex-1 ignora el límite del contenedor */}
+                <nav className="flex-1 min-h-0 overflow-y-auto px-2 py-3 space-y-4">
                     {NAV.map((group) => (
                         <div key={group.group}>
-                            <div className="mb-1 px-3 text-[10px] font-extrabold uppercase tracking-widest text-ink-600">
+                            <div className="mb-1 px-3 text-[10px] font-extrabold uppercase tracking-widest text-ink-500">
                                 {group.group}
                             </div>
                             <div className="space-y-0.5">
@@ -217,7 +217,7 @@ export default function AdminLayout({ title, children }) {
                     ))}
                 </nav>
 
-                {/* Footer */}
+                {/* Footer — siempre visible */}
                 <div className="shrink-0 border-t border-ink-800 px-2 py-3 space-y-0.5">
                     <Link
                         href="/palletizer"
@@ -272,7 +272,7 @@ export default function AdminLayout({ title, children }) {
                                 href="/logout"
                                 method="post"
                                 as="button"
-                                className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs font-semibold text-ink-600 hover:bg-ink-50 hover:text-ink-900 transition"
+                                className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs font-semibold text-ink-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:bg-red-100 active:border-red-300 transition"
                                 title="Cerrar sesión"
                             >
                                 {Icon.logout}
