@@ -1620,7 +1620,7 @@ export default function Index({ result }) {
                 )}
 
                 {isOpen && filtered.length > 0 && (
-                  <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
+                  <div className="absolute z-30 mt-2 w-full max-h-60 overflow-y-auto rounded-xl border border-ink-100 bg-white shadow-soft">
                     {filtered.map((p, i) => (
                       <button
                         key={p.id}
@@ -1667,7 +1667,7 @@ export default function Index({ result }) {
                 )}
 
                 {zoneOpen && filteredZones.length > 0 && (
-                  <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-ink-100 bg-white shadow-soft">
+                  <div className="absolute z-30 mt-2 w-full max-h-60 overflow-y-auto rounded-xl border border-ink-100 bg-white shadow-soft">
                     {filteredZones.map((z, i) => (
                       <button
                         key={z.id}
