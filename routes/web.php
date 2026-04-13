@@ -46,6 +46,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // Dashboard
     Route::get('/', fn() => inertia('Admin/Dashboard'))->name('dashboard');
 
+    // Guía / Información
+    Route::get('/info', fn() => inertia('Admin/Info'))->name('info');
+
     // Geografía (Países, Zonas y Provincias fusionados)
     Route::get('/countries',                  [CountryController::class, 'index'])->name('countries.index');
     Route::post('/countries',                 [CountryController::class, 'storeCountry'])->name('countries.store');

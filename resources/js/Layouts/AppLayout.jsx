@@ -31,9 +31,13 @@ export default function AppLayout({ title, children }) {
                                     href="/logout"
                                     method="post"
                                     as="button"
-                                    className="text-xs text-ink-400 hover:text-ink-700 transition"
+                                    title="Cerrar sesión"
+                                    className="flex items-center gap-1.5 rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs font-semibold text-ink-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:bg-red-100 active:border-red-300 transition"
                                 >
-                                    Cerrar sesión
+                                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
+                                        <path fillRule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clipRule="evenodd" />
+                                    </svg>
+                                    <span className="hidden sm:inline">Salir</span>
                                 </Link>
                             </>
                         ) : (

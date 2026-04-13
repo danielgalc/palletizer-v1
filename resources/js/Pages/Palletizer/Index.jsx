@@ -2795,7 +2795,7 @@ export default function Index({ result }) {
                                             type="button"
                                             onClick={() => toggleVariantAvailability(id)}
                                             disabled={isSaving}
-                                            title={isAvailable ? "Marcar como no disponible" : "Marcar como disponible"}
+                                            title={isAvailable ? "Marcar como sin stock" : "Marcar como en stock"}
                                             className={[
                                               "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors",
                                               "ring-1 ring-inset disabled:opacity-50",
@@ -2808,7 +2808,7 @@ export default function Index({ result }) {
                                               "h-1.5 w-1.5 rounded-full flex-shrink-0",
                                               isAvailable ? "bg-emerald-500" : "bg-red-400",
                                             ].join(" ")} />
-                                            {isSaving ? "Guardando…" : isAvailable ? "Disponible" : "No disponible"}
+                                            {isSaving ? "Guardando…" : isAvailable ? "En stock" : "Sin stock"}
                                           </button>
                                         ) : (
                                           <span
@@ -2823,7 +2823,7 @@ export default function Index({ result }) {
                                               "h-1.5 w-1.5 rounded-full flex-shrink-0",
                                               isAvailable ? "bg-emerald-500" : "bg-red-400",
                                             ].join(" ")} />
-                                            {isAvailable ? "Disponible" : "No disponible"}
+                                            {isAvailable ? "En stock" : "Sin stock"}
                                           </span>
                                         )}
                                         {isSelected && (
@@ -2870,7 +2870,7 @@ export default function Index({ result }) {
               )}
 
               <div className="mt-4 rounded-xl border border-ink-100 bg-white p-4 text-xs text-ink-600">
-                <b>Nota:</b> Marca como <b>Disponible</b> las cajas que tengas en stock. Solo las cajas marcadas disponibles y seleccionadas con <b>Usar</b> se tendrán en cuenta al calcular.
+                <b>Nota:</b> Marca como <b>En stock</b> las cajas que tengas disponibles. Solo las cajas en stock y seleccionadas con <b>Usar</b> se tendrán en cuenta al calcular.
               </div>
             </div>
 
