@@ -1,11 +1,10 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
 
 class DeviceModelController extends Controller
 {
@@ -17,71 +16,27 @@ class DeviceModelController extends Controller
             ->orderBy('dm.name')
             ->select(
                 'dm.id', 'dm.brand', 'dm.name', 'dm.sku', 'dm.weight_kg', 'dm.is_active',
-                'dm.box_type_id', 'bt.name as box_type_name', 'bt.code as box_type_code'
+                'dm.box_type_id',
+                'bt.id as bt_id', 'bt.name as bt_name', 'bt.code as bt_code'
             );
 
-        if ($request->filled('search')) {
-            $search = '%' . $request->search . '%';
-            $query->where(function ($q) use ($search) {
-                $q->where('dm.name', 'like', $search)
-                  ->orWhere('dm.brand', 'like', $search)
-                  ->orWhere('dm.sku', 'like', $search);
-            });
+        if ($request->boolean('only_active')) {
+            $query->where('dm.is_active', true);
         }
 
-        if ($request->filled('box_type_id')) {
-            $query->where('dm.box_type_id', $request->box_type_id);
-        }
-
-        $models   = $query->paginate(10)->withQueryString();
-        $boxTypes = DB::table('box_types')->orderBy('name')->get();
-
-        return Inertia::render('Admin/DeviceModels', [
-            'models'   => $models,
-            'boxTypes' => $boxTypes,
-            'filters'  => $request->only(['search', 'box_type_id']),
+        return $query->get()->map(fn($row) => [
+            'id'          => $row->id,
+            'brand'       => $row->brand,
+            'name'        => $row->name,
+            'sku'         => $row->sku,
+            'weight_kg'   => $row->weight_kg,
+            'is_active'   => $row->is_active,
+            'box_type_id' => $row->box_type_id,
+            'box_type'    => [
+                'id'   => $row->bt_id,
+                'name' => $row->bt_name,
+                'code' => $row->bt_code,
+            ],
         ]);
-    }
-
-    public function store(Request $request)
-    {
-        $data = $request->validate([
-            'brand'       => ['nullable', 'string', 'max:100'],
-            'name'        => ['required', 'string', 'max:150'],
-            'sku'         => ['nullable', 'string', 'max:100', 'unique:device_models,sku'],
-            'box_type_id' => ['required', 'integer', 'exists:box_types,id'],
-            'weight_kg'   => ['nullable', 'numeric', 'min:0'],
-            'is_active'   => ['boolean'],
-        ]);
-
-        DB::table('device_models')->insert([
-            ...$data,
-            'is_active'  => $data['is_active'] ?? true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return back()->with('success', "Modelo {$data['name']} creado.");
-    }
-
-    public function update(Request $request, int $id)
-    {
-        $data = $request->validate([
-            'brand'       => ['nullable', 'string', 'max:100'],
-            'name'        => ['required', 'string', 'max:150'],
-            'sku'         => ['nullable', 'string', 'max:100', "unique:device_models,sku,{$id}"],
-            'box_type_id' => ['required', 'integer', 'exists:box_types,id'],
-            'weight_kg'   => ['nullable', 'numeric', 'min:0'],
-            'is_active'   => ['boolean'],
-        ]);
-
-        DB::table('device_models')->where('id', $id)->update([...$data, 'updated_at' => now()]);
-        return back()->with('success', 'Modelo actualizado.');
-    }
-
-    public function destroy(int $id)
-    {
-        DB::table('device_models')->where('id', $id)->delete();
-        return back()->with('success', 'Modelo eliminado.');
     }
 }

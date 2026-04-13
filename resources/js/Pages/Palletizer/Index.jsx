@@ -2066,8 +2066,8 @@ export default function Index({ result }) {
               <div className="grid gap-3 sm:grid-cols-5">
                 <Stat label="Pallets" value={fmtNum(best.pallet_count ?? best.pallets_count)} />
                 <Stat label="€/pallet" value={fmtEUR(pricePerPallet(best))} />
-                <Stat label="€/caja" value={eurPerBox !== null ? fmtEUR(eurPerBox) : "—"} />
                 <Stat label="Total cajas" value={fmtEUR(bestTotalBoxCost)} />
+                <Stat label="Total Pallets" value={fmtEUR(best.total_price ?? 0)} />
                 <Stat label="Total" value={fmtEUR(bestTotal)} />
               </div>
 
@@ -2530,7 +2530,7 @@ export default function Index({ result }) {
 
                                 {/* Total */}
                                 <td className="py-3 text-center font-extrabold tabular-nums">
-                                  {fmtEUR(a?.total_price)}
+                                  {fmtEUR(a?.total_cost ?? a?.total_price)}
                                 </td>
 
                                 {/* Botón detalles */}

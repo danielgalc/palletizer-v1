@@ -1,10 +1,4 @@
-import Checkbox from '@/Components/Checkbox';
-import InputError from '@/Components/InputError';
-import InputLabel from '@/Components/InputLabel';
-import PrimaryButton from '@/Components/PrimaryButton';
-import TextInput from '@/Components/TextInput';
-import GuestLayout from '@/Layouts/GuestLayout';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, useForm, router } from '@inertiajs/react';
 
 export default function Login({ status, canResetPassword }) {
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -15,86 +9,112 @@ export default function Login({ status, canResetPassword }) {
 
     const submit = (e) => {
         e.preventDefault();
+        post(route('login'), { onFinish: () => reset('password') });
+    };
 
-        post(route('login'), {
-            onFinish: () => reset('password'),
-        });
+    const enterAsGuest = () => {
+        router.post(route('guest.access'));
     };
 
     return (
-        <GuestLayout>
-            <Head title="Log in" />
+        <div className="flex min-h-screen items-center justify-center bg-ink-50 px-4">
+            <Head title="Acceder" />
 
-            {status && (
-                <div className="mb-4 text-sm font-medium text-green-600">
-                    {status}
-                </div>
-            )}
-
-            <form onSubmit={submit}>
-                <div>
-                    <InputLabel htmlFor="email" value="Email" />
-
-                    <TextInput
-                        id="email"
-                        type="email"
-                        name="email"
-                        value={data.email}
-                        className="mt-1 block w-full"
-                        autoComplete="username"
-                        isFocused={true}
-                        onChange={(e) => setData('email', e.target.value)}
-                    />
-
-                    <InputError message={errors.email} className="mt-2" />
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-soft ring-1 ring-ink-100 p-8">
+                {/* Logo */}
+                <div className="mb-8 flex flex-col items-center gap-2">
+                    <img src="/palletizer_icon.svg" alt="Palletizer" className="h-12 w-auto" />
+                    <h1 className="text-xl font-extrabold tracking-tight text-ink-900">Palletizer</h1>
+                    <p className="text-sm text-ink-500">Inicia sesión para continuar</p>
                 </div>
 
-                <div className="mt-4">
-                    <InputLabel htmlFor="password" value="Password" />
+                {status && (
+                    <div className="mb-4 rounded-xl bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+                        {status}
+                    </div>
+                )}
 
-                    <TextInput
-                        id="password"
-                        type="password"
-                        name="password"
-                        value={data.password}
-                        className="mt-1 block w-full"
-                        autoComplete="current-password"
-                        onChange={(e) => setData('password', e.target.value)}
-                    />
-
-                    <InputError message={errors.password} className="mt-2" />
-                </div>
-
-                <div className="mt-4 block">
-                    <label className="flex items-center">
-                        <Checkbox
-                            name="remember"
-                            checked={data.remember}
-                            onChange={(e) =>
-                                setData('remember', e.target.checked)
-                            }
+                <form onSubmit={submit} className="space-y-4">
+                    <div>
+                        <label htmlFor="email" className="block text-sm font-semibold text-ink-700 mb-1">
+                            Correo electrónico
+                        </label>
+                        <input
+                            id="email"
+                            type="email"
+                            value={data.email}
+                            autoComplete="username"
+                            autoFocus
+                            onChange={(e) => setData('email', e.target.value)}
+                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                            placeholder="admin@ejemplo.com"
                         />
-                        <span className="ms-2 text-sm text-gray-600">
-                            Remember me
-                        </span>
-                    </label>
+                        {errors.email && (
+                            <p className="mt-1 text-xs font-semibold text-red-600">{errors.email}</p>
+                        )}
+                    </div>
+
+                    <div>
+                        <label htmlFor="password" className="block text-sm font-semibold text-ink-700 mb-1">
+                            Contraseña
+                        </label>
+                        <input
+                            id="password"
+                            type="password"
+                            value={data.password}
+                            autoComplete="current-password"
+                            onChange={(e) => setData('password', e.target.value)}
+                            className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2 disabled:bg-ink-50"
+                            placeholder="••••••••"
+                        />
+                        {errors.password && (
+                            <p className="mt-1 text-xs font-semibold text-red-600">{errors.password}</p>
+                        )}
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-sm text-ink-600 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={data.remember}
+                                onChange={(e) => setData('remember', e.target.checked)}
+                                className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                            />
+                            Recordarme
+                        </label>
+                        {canResetPassword && (
+                            <a
+                                href={route('password.request')}
+                                className="text-xs text-brand-600 hover:underline"
+                            >
+                                ¿Olvidaste tu contraseña?
+                            </a>
+                        )}
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={processing}
+                        className="w-full rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60 transition-colors"
+                    >
+                        {processing ? 'Entrando…' : 'Iniciar sesión'}
+                    </button>
+                </form>
+
+                <div className="my-5 flex items-center gap-3">
+                    <div className="h-px flex-1 bg-ink-100" />
+                    <span className="text-xs text-ink-400">o</span>
+                    <div className="h-px flex-1 bg-ink-100" />
                 </div>
 
-                <div className="mt-4 flex items-center justify-end">
-                    {canResetPassword && (
-                        <Link
-                            href={route('password.request')}
-                            className="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                        >
-                            Forgot your password?
-                        </Link>
-                    )}
-
-                    <PrimaryButton className="ms-4" disabled={processing}>
-                        Log in
-                    </PrimaryButton>
-                </div>
-            </form>
-        </GuestLayout>
+                <button
+                    type="button"
+                    onClick={enterAsGuest}
+                    className="w-full rounded-xl border border-ink-200 px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-50 transition-colors"
+                >
+                    Usar como invitado
+                </button>
+            </div>
+        </div>
     );
 }

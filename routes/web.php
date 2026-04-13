@@ -1,9 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 use App\Http\Controllers\PalletizerController;
 use App\Http\Controllers\Admin\CountryController;
 use App\Http\Controllers\Admin\ProvinceController;
@@ -15,29 +13,31 @@ use App\Http\Controllers\Admin\BoxProviderController;
 use App\Http\Controllers\Admin\BoxVariantController;
 use App\Http\Controllers\Admin\DeviceModelController;
 
-Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
-});
+// Raíz: Palletizer (requiere login o acceso como invitado)
+Route::get('/', function (\Illuminate\Http\Request $request) {
+    if (auth()->check() || $request->session()->get('guest_access')) {
+        return app(PalletizerController::class)->index();
+    }
+    return redirect()->route('login');
+})->name('palletizer.index');
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+// Acceso como invitado
+Route::post('/guest-access', function (\Illuminate\Http\Request $request) {
+    $request->session()->put('guest_access', true);
+    return redirect('/');
+})->name('guest.access');
+
+// Compatibilidad con la URL antigua
+Route::get('/palletizer', fn() => redirect('/'))->name('palletizer.redirect');
+
+Route::get('/palletizer/calculate', fn() => redirect('/'));
+Route::post('/palletizer/calculate', [PalletizerController::class, 'calculate'])->name('palletizer.calculate');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
-
-// Rutas Palletizer
-
-Route::get('/palletizer', [PalletizerController::class, 'index'])->name('palletizer.index');
-Route::post('/palletizer/calculate', [PalletizerController::class, 'calculate'])->name('palletizer.calculate');
 
 // ── Panel de administración ────────────────────────────────────────────────
 
