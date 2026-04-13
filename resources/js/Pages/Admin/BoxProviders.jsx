@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useForm } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Select, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Select, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader, Badge,
 } from "@/Components/Admin/Ui";
 
@@ -17,6 +17,17 @@ export default function BoxProviders({ providers }) {
     const [modalOpen, setModalOpen]       = useState(false);
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
+    const [search, setSearch]             = useState("");
+    const [typeFilter, setTypeFilter]     = useState("");
+
+    const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return providers.filter((p) => {
+            const matchesSearch = !q || p.name.toLowerCase().includes(q);
+            const matchesType   = !typeFilter || p.provider_type === typeFilter;
+            return matchesSearch && matchesType;
+        });
+    }, [providers, search, typeFilter]);
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
 
@@ -44,8 +55,32 @@ export default function BoxProviders({ providers }) {
                 action={<Btn onClick={openCreate}>+ Nuevo proveedor</Btn>}
             />
 
-            <Table headers={["Nombre", "Tipo", "Acciones"]}>
-                {providers.map((p) => (
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+                <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar por nombre…"
+                    className="max-w-xs"
+                />
+                <div className="w-56">
+                    <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+                        <option value="">Todos los tipos</option>
+                        <option value="new_supplier">Cajas nuevas</option>
+                        <option value="reused_source">Cajas reutilizadas</option>
+                    </Select>
+                </div>
+                {(search || typeFilter) && (
+                    <Btn variant="secondary" size="sm" onClick={() => { setSearch(""); setTypeFilter(""); }}>
+                        Limpiar filtros
+                    </Btn>
+                )}
+                <span className="ml-auto self-center text-sm text-ink-500">
+                    {filtered.length} proveedor{filtered.length !== 1 ? "es" : ""}
+                </span>
+            </div>
+
+            <Table headers={["Nombre", "Tipo", "Acciones"]} empty="No hay proveedores que coincidan.">
+                {filtered.map((p) => (
                     <Tr key={p.id}>
                         <Td className="font-semibold">{p.name}</Td>
                         <Td>
@@ -55,8 +90,8 @@ export default function BoxProviders({ providers }) {
                         </Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
-                                <Btn size="sm" variant="secondary" onClick={() => openEdit(p)}>Editar</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(p)}>Eliminar</Btn>
+                                <ActionBtn type="edit" onClick={() => openEdit(p)} />
+                                <ActionBtn type="delete" onClick={() => setDeleteTarget(p)} />
                             </div>
                         </Td>
                     </Tr>

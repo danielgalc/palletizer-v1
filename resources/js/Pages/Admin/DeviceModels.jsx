@@ -25,30 +25,38 @@ export default function DeviceModels({ models, boxTypes, filters }) {
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [search, setSearch]             = useState(filters?.search ?? "");
     const [filterBox, setFilterBox]       = useState(filters?.box_type_id ?? "");
+    const [filterActive, setFilterActive] = useState(filters?.is_active ?? "");
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
 
-    const doSearch = useDebounce((value, box) => {
+    const doSearch = useDebounce((value, box, active) => {
         router.get("/admin/device-models", {
-            search:      value || undefined,
-            box_type_id: box   || undefined,
+            search:      value  || undefined,
+            box_type_id: box    || undefined,
+            is_active:   active !== "" ? active : undefined,
         }, { preserveState: true, preserveScroll: true, replace: true });
     });
 
     const handleSearch = (e) => {
         setSearch(e.target.value);
-        doSearch(e.target.value, filterBox);
+        doSearch(e.target.value, filterBox, filterActive);
     };
 
     const handleBoxFilter = (e) => {
         setFilterBox(e.target.value);
-        doSearch(search, e.target.value);
+        doSearch(search, e.target.value, filterActive);
+    };
+
+    const handleActiveFilter = (e) => {
+        setFilterActive(e.target.value);
+        doSearch(search, filterBox, e.target.value);
     };
 
     const goToPage = (page) => {
         router.get("/admin/device-models", {
-            search:      search      || undefined,
-            box_type_id: filterBox   || undefined,
+            search:      search        || undefined,
+            box_type_id: filterBox     || undefined,
+            is_active:   filterActive !== "" ? filterActive : undefined,
             page,
         }, { preserveState: true, preserveScroll: true });
     };
@@ -86,25 +94,34 @@ export default function DeviceModels({ models, boxTypes, filters }) {
                 action={<Btn onClick={openCreate}>+ Nuevo modelo</Btn>}
             />
 
-            <div className="mb-4 flex flex-wrap gap-3">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
                 <Input
                     value={search}
                     onChange={handleSearch}
                     placeholder="Buscar por marca, modelo o SKU…"
                     className="max-w-xs"
                 />
-                <Select className="w-auto min-w-[160px]" value={filterBox} onChange={handleBoxFilter}>
-                    <option value="">Todos los tipos</option>
-                    {boxTypes.map((bt) => (
-                        <option key={bt.id} value={bt.id}>{bt.name}</option>
-                    ))}
-                </Select>
-                {(search || filterBox) && (
+                <div className="w-48">
+                    <Select value={filterBox} onChange={handleBoxFilter}>
+                        <option value="">Todos los tipos de caja</option>
+                        {boxTypes.map((bt) => (
+                            <option key={bt.id} value={bt.id}>{bt.name}</option>
+                        ))}
+                    </Select>
+                </div>
+                <div className="w-40">
+                    <Select value={filterActive} onChange={handleActiveFilter}>
+                        <option value="">Todos los estados</option>
+                        <option value="1">Activos</option>
+                        <option value="0">Inactivos</option>
+                    </Select>
+                </div>
+                {(search || filterBox || filterActive !== "") && (
                     <Btn variant="secondary" size="sm" onClick={() => {
-                        setSearch(""); setFilterBox("");
+                        setSearch(""); setFilterBox(""); setFilterActive("");
                         router.get("/admin/device-models", {}, { preserveState: true, replace: true });
                     }}>
-                        Limpiar
+                        Limpiar filtros
                     </Btn>
                 )}
                 <span className="ml-auto self-center text-sm text-ink-500">

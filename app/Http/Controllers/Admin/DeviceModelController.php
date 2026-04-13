@@ -32,6 +32,9 @@ class DeviceModelController extends Controller
         if ($request->filled('box_type_id')) {
             $query->where('dm.box_type_id', $request->box_type_id);
         }
+        if ($request->filled('is_active') && $request->is_active !== '') {
+            $query->where('dm.is_active', (bool) $request->is_active);
+        }
 
         $models   = $query->paginate(25)->withQueryString();
         $boxTypes = DB::table('box_types')->orderBy('name')->get();
@@ -39,7 +42,7 @@ class DeviceModelController extends Controller
         return Inertia::render('Admin/DeviceModels', [
             'models'   => $models,
             'boxTypes' => $boxTypes,
-            'filters'  => $request->only(['search', 'box_type_id']),
+            'filters'  => $request->only(['search', 'box_type_id', 'is_active']),
         ]);
     }
 

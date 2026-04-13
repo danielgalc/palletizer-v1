@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useForm } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, ActionBtn, Field, Input, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Select, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader,
 } from "@/Components/Admin/Ui";
 
@@ -17,6 +17,23 @@ export default function BoxTypes({ boxTypes }) {
     const [modalOpen, setModalOpen]       = useState(false);
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
+    const [search, setSearch]             = useState("");
+    const [sortBy, setSortBy]             = useState("name");
+    const [sortDir, setSortDir]           = useState("asc");
+
+    const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        const result = boxTypes.filter((b) =>
+            !q || b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q)
+        );
+        return [...result].sort((a, b) => {
+            let cmp = 0;
+            if (sortBy === "name")   cmp = a.name.localeCompare(b.name);
+            if (sortBy === "volume") cmp = (a.length_cm * a.width_cm * a.height_cm) - (b.length_cm * b.width_cm * b.height_cm);
+            if (sortBy === "weight") cmp = a.weight_kg - b.weight_kg;
+            return sortDir === "asc" ? cmp : -cmp;
+        });
+    }, [boxTypes, search, sortBy, sortDir]);
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
 
@@ -49,13 +66,38 @@ export default function BoxTypes({ boxTypes }) {
                 action={<Btn onClick={openCreate}>+ Nuevo tipo</Btn>}
             />
 
-            <Table headers={["Código", "Nombre", "Dimensiones (cm)", "Peso (kg)", "Sep. seguridad", "Acciones"]}>
-                {boxTypes.map((b) => (
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+                <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar por nombre o código…"
+                    className="max-w-xs"
+                />
+                <div className="w-52">
+                    <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                        <option value="name">Ordenar: nombre</option>
+                        <option value="volume">Ordenar: volumen</option>
+                        <option value="weight">Ordenar: peso</option>
+                    </Select>
+                </div>
+                <div className="w-36">
+                    <Select value={sortDir} onChange={(e) => setSortDir(e.target.value)}>
+                        <option value="asc">↑ Ascendente</option>
+                        <option value="desc">↓ Descendente</option>
+                    </Select>
+                </div>
+                <span className="ml-auto self-center text-sm text-ink-500">
+                    {filtered.length} tipo{filtered.length !== 1 ? "s" : ""}
+                </span>
+            </div>
+
+            <Table headers={["Código", "Nombre", "Dimensiones (cm)", "Peso (kg)", "Sep. seguridad", "Acciones"]} empty="No hay tipos que coincidan.">
+                {filtered.map((b) => (
                     <Tr key={b.id}>
                         <Td><code className="rounded bg-ink-100 px-1.5 py-0.5 text-xs">{b.code}</code></Td>
                         <Td className="font-semibold">{b.name}</Td>
                         <Td>{b.length_cm} × {b.width_cm} × {b.height_cm}</Td>
-                        <Td>{b.weight_kg}</Td>
+                        <Td>{b.weight_kg} kg</Td>
                         <Td>
                             {b.security_separator_every_n_layers
                                 ? `Cada ${b.security_separator_every_n_layers} capas`

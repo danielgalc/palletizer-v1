@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
-    Btn, Field, Input, Select, Modal, ConfirmDialog,
+    Btn, ActionBtn, Field, Input, Select, Modal, ConfirmDialog,
     Table, Tr, Td, PageHeader, Badge, Pagination,
 } from "@/Components/Admin/Ui";
 
@@ -22,21 +22,36 @@ export default function BoxVariants({ variants, providers, filters }) {
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [filterKind, setFilterKind]     = useState(filters?.kind ?? "");
+    const [filterCond, setFilterCond]     = useState(filters?.condition ?? "");
+    const [filterProv, setFilterProv]     = useState(filters?.provider_id ?? "");
+    const [filterActive, setFilterActive] = useState(filters?.is_active ?? "");
+    const [filterStock, setFilterStock]   = useState(filters?.stock ?? "");
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
 
-    const handleKindFilter = (kind) => {
-        setFilterKind(kind);
-        router.get("/admin/box-variants", { kind: kind || undefined }, {
-            preserveState: true, preserveScroll: true, replace: true,
-        });
+    const applyFilters = (patch) => {
+        const next = { kind: filterKind, condition: filterCond, provider_id: filterProv, is_active: filterActive, stock: filterStock, ...patch };
+        router.get("/admin/box-variants", {
+            kind:        next.kind        || undefined,
+            condition:   next.condition   || undefined,
+            provider_id: next.provider_id || undefined,
+            is_active:   next.is_active   !== "" ? next.is_active : undefined,
+            stock:       next.stock       || undefined,
+        }, { preserveState: true, preserveScroll: true, replace: true });
     };
 
     const goToPage = (page) => {
-        router.get("/admin/box-variants", { kind: filterKind || undefined, page }, {
-            preserveState: true, preserveScroll: true,
-        });
+        router.get("/admin/box-variants", {
+            kind:        filterKind        || undefined,
+            condition:   filterCond        || undefined,
+            provider_id: filterProv        || undefined,
+            is_active:   filterActive !== "" ? filterActive : undefined,
+            stock:       filterStock       || undefined,
+            page,
+        }, { preserveState: true, preserveScroll: true });
     };
+
+    const hasFilters = filterKind || filterCond || filterProv || filterActive !== "" || filterStock;
 
     const openCreate = () => { reset(); clearErrors(); setEditing(null); setModalOpen(true); };
     const openEdit   = (v) => {
@@ -67,25 +82,78 @@ export default function BoxVariants({ variants, providers, filters }) {
                 action={<Btn onClick={openCreate}>+ Nueva variante</Btn>}
             />
 
-            <div className="mb-4 flex flex-wrap gap-2">
-                {["", "laptop", "tower", "tower_sff", "mini_pc"].map((k) => (
-                    <button
-                        key={k}
-                        type="button"
-                        onClick={() => handleKindFilter(k)}
-                        className={[
-                            "rounded-xl px-3 py-1.5 text-xs font-extrabold transition",
-                            filterKind === k
-                                ? "bg-ink-900 text-white"
-                                : "bg-white border border-ink-200 text-ink-700 hover:bg-ink-50",
-                        ].join(" ")}
-                    >
-                        {k ? KIND_LABELS[k] : "Todos"}
-                    </button>
-                ))}
-                <span className="ml-auto self-center text-sm text-ink-500">
-                    {variants.total} variante{variants.total !== 1 ? "s" : ""}
-                </span>
+            {/* Filtros: pills para tipo + selects para el resto */}
+            <div className="mb-4 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    {["", "laptop", "tower", "tower_sff", "mini_pc"].map((k) => (
+                        <button
+                            key={k}
+                            type="button"
+                            onClick={() => { setFilterKind(k); applyFilters({ kind: k }); }}
+                            className={[
+                                "rounded-xl px-3 py-1.5 text-xs font-extrabold transition",
+                                filterKind === k
+                                    ? "bg-ink-900 text-white"
+                                    : "bg-white border border-ink-200 text-ink-700 hover:bg-ink-50",
+                            ].join(" ")}
+                        >
+                            {k ? KIND_LABELS[k] : "Todos"}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="w-44">
+                        <Select
+                            value={filterCond}
+                            onChange={(e) => { setFilterCond(e.target.value); applyFilters({ condition: e.target.value }); }}
+                        >
+                            <option value="">Todas las condiciones</option>
+                            <option value="new">Nueva</option>
+                            <option value="reused">Reutilizada</option>
+                        </Select>
+                    </div>
+                    <div className="w-52">
+                        <Select
+                            value={filterProv}
+                            onChange={(e) => { setFilterProv(e.target.value); applyFilters({ provider_id: e.target.value }); }}
+                        >
+                            <option value="">Todos los proveedores</option>
+                            {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </Select>
+                    </div>
+                    <div className="w-40">
+                        <Select
+                            value={filterActive}
+                            onChange={(e) => { setFilterActive(e.target.value); applyFilters({ is_active: e.target.value }); }}
+                        >
+                            <option value="">Todos los estados</option>
+                            <option value="1">Activas</option>
+                            <option value="0">Inactivas</option>
+                        </Select>
+                    </div>
+                    <div className="w-40">
+                        <Select
+                            value={filterStock}
+                            onChange={(e) => { setFilterStock(e.target.value); applyFilters({ stock: e.target.value }); }}
+                        >
+                            <option value="">Todo el stock</option>
+                            <option value="in">Con stock</option>
+                            <option value="out">Sin stock</option>
+                        </Select>
+                    </div>
+                    {hasFilters && (
+                        <Btn variant="secondary" size="sm" onClick={() => {
+                            setFilterKind(""); setFilterCond(""); setFilterProv(""); setFilterActive(""); setFilterStock("");
+                            applyFilters({ kind: "", condition: "", provider_id: "", is_active: "", stock: "" });
+                        }}>
+                            Limpiar filtros
+                        </Btn>
+                    )}
+                    <span className="ml-auto self-center text-sm text-ink-500">
+                        {variants.total} variante{variants.total !== 1 ? "s" : ""}
+                    </span>
+                </div>
             </div>
 
             <Table headers={["Tipo", "Condición", "Proveedor", "Dimensiones (cm)", "€/caja", "Stock", "Activa", "Acciones"]}>
@@ -100,8 +168,8 @@ export default function BoxVariants({ variants, providers, filters }) {
                         <Td><Badge color={v.is_active ? "green" : "gray"}>{v.is_active ? "Sí" : "No"}</Badge></Td>
                         <Td right>
                             <div className="flex justify-end gap-2">
-                                <Btn size="sm" variant="secondary" onClick={() => openEdit(v)}>Editar</Btn>
-                                <Btn size="sm" variant="danger" onClick={() => setDeleteTarget(v)}>Eliminar</Btn>
+                                <ActionBtn type="edit" onClick={() => openEdit(v)} />
+                                <ActionBtn type="delete" onClick={() => setDeleteTarget(v)} />
                             </div>
                         </Td>
                     </Tr>

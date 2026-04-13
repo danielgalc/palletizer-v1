@@ -25,6 +25,22 @@ class BoxVariantController extends Controller
         if ($request->filled('kind')) {
             $query->where('v.kind', $request->kind);
         }
+        if ($request->filled('condition')) {
+            $query->where('v.condition', $request->condition);
+        }
+        if ($request->filled('provider_id')) {
+            $query->where('v.provider_id', $request->provider_id);
+        }
+        if ($request->filled('is_active') && $request->is_active !== '') {
+            $query->where('v.is_active', (bool) $request->is_active);
+        }
+        if ($request->filled('stock') && $request->stock !== '') {
+            if ($request->stock === 'in') {
+                $query->where('v.on_hand_qty', '>', 0);
+            } elseif ($request->stock === 'out') {
+                $query->where('v.on_hand_qty', '=', 0);
+            }
+        }
 
         $variants  = $query->paginate(25)->withQueryString();
         $providers = DB::table('box_providers')->orderBy('name')->get();
@@ -32,7 +48,7 @@ class BoxVariantController extends Controller
         return Inertia::render('Admin/BoxVariants', [
             'variants'  => $variants,
             'providers' => $providers,
-            'filters'   => $request->only(['kind']),
+            'filters'   => $request->only(['kind', 'condition', 'provider_id', 'is_active', 'stock']),
         ]);
     }
 
