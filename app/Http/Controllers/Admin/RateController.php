@@ -30,6 +30,9 @@ class RateController extends Controller
         if ($request->filled('zone_id')) {
             $query->where('r.zone_id', $request->zone_id);
         }
+        if ($request->filled('pallet_type_id')) {
+            $query->where('r.pallet_type_id', $request->pallet_type_id);
+        }
 
         $rates = $query
             ->orderBy('c.name')
@@ -59,7 +62,7 @@ class RateController extends Controller
             'carriers'    => $carriers,
             'zones'       => $zones,
             'palletTypes' => $palletTypes,
-            'filters'     => $request->only(['carrier_id', 'zone_id']),
+            'filters'     => $request->only(['carrier_id', 'zone_id', 'pallet_type_id']),
         ]);
     }
 

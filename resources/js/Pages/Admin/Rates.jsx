@@ -16,8 +16,11 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
     const [modalOpen, setModalOpen]       = useState(false);
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
-    const [localCarrier, setLocalCarrier] = useState(filters?.carrier_id ?? "");
-    const [localZone, setLocalZone]       = useState(filters?.zone_id ?? "");
+    const [localCarrier, setLocalCarrier]         = useState(filters?.carrier_id ?? "");
+    const [localZone, setLocalZone]               = useState(filters?.zone_id ?? "");
+    const [localPalletType, setLocalPalletType]   = useState(filters?.pallet_type_id ?? "");
+
+    const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
 
     // Zonas filtradas por el transportista seleccionado en el modal
     const zonesForModal = useMemo(() => {
@@ -25,20 +28,26 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
         return zones.filter((z) => String(z.carrier_id) === String(data.carrier_id));
     }, [zones, data.carrier_id]);
 
-    const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
+    // Zonas filtradas por el transportista seleccionado en la barra de filtros
+    const zonesForFilter = useMemo(() => {
+        if (!localCarrier) return zones;
+        return zones.filter((z) => String(z.carrier_id) === String(localCarrier));
+    }, [zones, localCarrier]);
 
     const applyFilters = (patch) => {
-        const next = { carrier_id: localCarrier, zone_id: localZone, ...patch };
+        const next = { carrier_id: localCarrier, zone_id: localZone, pallet_type_id: localPalletType, ...patch };
         router.get("/admin/rates", {
-            carrier_id: next.carrier_id || undefined,
-            zone_id:    next.zone_id    || undefined,
+            carrier_id:     next.carrier_id     || undefined,
+            zone_id:        next.zone_id        || undefined,
+            pallet_type_id: next.pallet_type_id || undefined,
         }, { preserveState: true, preserveScroll: true, replace: true });
     };
 
     const goToPage = (page) => {
         router.get("/admin/rates", {
-            carrier_id: localCarrier || undefined,
-            zone_id:    localZone    || undefined,
+            carrier_id:     localCarrier     || undefined,
+            zone_id:        localZone        || undefined,
+            pallet_type_id: localPalletType  || undefined,
             page,
         }, { preserveState: true, preserveScroll: true });
     };
@@ -86,39 +95,63 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
             />
 
             {/* Filtros */}
-            <div className="mb-4 flex flex-wrap gap-3">
-                <Select
-                    className="w-auto min-w-[180px]"
-                    value={localCarrier}
-                    onChange={(e) => {
-                        setLocalCarrier(e.target.value);
-                        applyFilters({ carrier_id: e.target.value });
-                    }}
-                >
-                    <option value="">Todos los transportistas</option>
-                    {carriers.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                </Select>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+                <div className="w-52">
+                    <Select
+                        value={localCarrier}
+                        onChange={(e) => {
+                            const carrier = e.target.value;
+                            setLocalCarrier(carrier);
+                            // Reset zone if it no longer belongs to this carrier
+                            const zoneStillValid = !carrier || zones.some(
+                                (z) => String(z.id) === String(localZone) && String(z.carrier_id) === carrier
+                            );
+                            const nextZone = zoneStillValid ? localZone : "";
+                            if (!zoneStillValid) setLocalZone("");
+                            applyFilters({ carrier_id: carrier, zone_id: nextZone });
+                        }}
+                    >
+                        <option value="">Todos los transportistas</option>
+                        {carriers.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </Select>
+                </div>
 
-                <Select
-                    className="w-auto min-w-[200px]"
-                    value={localZone}
-                    onChange={(e) => {
-                        setLocalZone(e.target.value);
-                        applyFilters({ zone_id: e.target.value });
-                    }}
-                >
-                    <option value="">Todas las zonas</option>
-                    {zones.map((z) => (
-                        <option key={z.id} value={z.id}>{z.country_name} — {z.name}</option>
-                    ))}
-                </Select>
+                <div className="w-56">
+                    <Select
+                        value={localZone}
+                        onChange={(e) => {
+                            setLocalZone(e.target.value);
+                            applyFilters({ zone_id: e.target.value });
+                        }}
+                    >
+                        <option value="">Todas las zonas</option>
+                        {zonesForFilter.map((z) => (
+                            <option key={z.id} value={z.id}>{z.country_name} — {z.name}</option>
+                        ))}
+                    </Select>
+                </div>
 
-                {(localCarrier || localZone) && (
+                <div className="w-48">
+                    <Select
+                        value={localPalletType}
+                        onChange={(e) => {
+                            setLocalPalletType(e.target.value);
+                            applyFilters({ pallet_type_id: e.target.value });
+                        }}
+                    >
+                        <option value="">Todos los tipos</option>
+                        {palletTypes.map((pt) => (
+                            <option key={pt.id} value={pt.id}>{pt.name}</option>
+                        ))}
+                    </Select>
+                </div>
+
+                {(localCarrier || localZone || localPalletType) && (
                     <Btn variant="secondary" size="sm" onClick={() => {
-                        setLocalCarrier(""); setLocalZone("");
-                        applyFilters({ carrier_id: "", zone_id: "" });
+                        setLocalCarrier(""); setLocalZone(""); setLocalPalletType("");
+                        applyFilters({ carrier_id: "", zone_id: "", pallet_type_id: "" });
                     }}>
                         Limpiar filtros
                     </Btn>
