@@ -21,7 +21,7 @@ export default function AppLayout({ title, children }) {
                             <>
                                 {isAdmin && (
                                     <Link
-                                        href="/admin/countries"
+                                        href="/admin"
                                         className="rounded-lg border border-ink-200 bg-ink-50 px-3 py-1.5 text-xs font-extrabold text-ink-700 hover:bg-ink-100 transition"
                                     >
                                         Panel admin

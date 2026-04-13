@@ -58,6 +58,12 @@ const Icon = {
 
 const NAV = [
     {
+        group: "General",
+        items: [
+            { href: "/admin", label: "General", icon: Icon.pallet, exact: true },
+        ],
+    },
+    {
         group: "Geografía",
         items: [
             { href: "/admin/countries", label: "Países y Zonas",  icon: Icon.globe },
@@ -88,9 +94,9 @@ const NAV = [
     },
 ];
 
-function NavItem({ href, label, icon }) {
+function NavItem({ href, label, icon, exact = false }) {
     const { url } = usePage();
-    const active = url.startsWith(href);
+    const active = exact ? url === href : url.startsWith(href);
 
     return (
         <Link
@@ -190,10 +196,8 @@ export default function AdminLayout({ title, children }) {
 
                 {/* Marca */}
                 <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-ink-800 px-4">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500">
-                        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-ink-900">
-                            <path d="M11 17a1 1 0 001.447.894l4-2A1 1 0 0017 15V9.236a1 1 0 00-1.447-.894l-4 2a1 1 0 00-.553.894V17zM15.211 6.276a1 1 0 000-1.788l-4.764-2.382a1 1 0 00-.894 0L4.789 4.488a1 1 0 000 1.788l4.764 2.382a1 1 0 00.894 0l4.764-2.382zM4.447 8.342A1 1 0 003 9.236V15a1 1 0 00.553.894l4 2A1 1 0 009 17v-5.764a1 1 0 00-.553-.894l-4-2z" />
-                        </svg>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white overflow-hidden">
+                        <img src="/palletizer_icon_final.png" alt="Palletizer" className="h-7 w-7 object-contain" />
                     </div>
                     <div>
                         <div className="text-xs font-extrabold tracking-tight text-white leading-none">Palletizer</div>
@@ -202,7 +206,7 @@ export default function AdminLayout({ title, children }) {
                 </div>
 
                 {/* Nav — min-h-0 es clave: sin él, flex-1 ignora el límite del contenedor */}
-                <nav className="flex-1 min-h-0 overflow-y-auto px-2 py-3 space-y-4">
+                <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-3 space-y-4">
                     {NAV.map((group) => (
                         <div key={group.group}>
                             <div className="mb-1 px-3 text-[10px] font-extrabold uppercase tracking-widest text-ink-500">
@@ -220,7 +224,7 @@ export default function AdminLayout({ title, children }) {
                 {/* Footer — siempre visible */}
                 <div className="shrink-0 border-t border-ink-800 px-2 py-3 space-y-0.5">
                     <Link
-                        href="/palletizer"
+                        href="/"
                         className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-500 hover:bg-ink-800 hover:text-white transition-all"
                     >
                         {Icon.back}
