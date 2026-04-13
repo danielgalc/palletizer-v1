@@ -20,12 +20,11 @@ export default function Login({ status, canResetPassword }) {
         <div className="flex min-h-screen items-center justify-center bg-ink-50 px-4">
             <Head title="Acceder" />
 
-            <div className="w-full max-w-sm rounded-2xl bg-white shadow-soft ring-1 ring-ink-100 p-8">
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-soft ring-1 ring-ink-100 px-8 pt-4 pb-8">
                 {/* Logo */}
-                <div className="mb-8 flex flex-col items-center gap-2">
-                    <img src="/palletizer_icon.svg" alt="Palletizer" className="h-12 w-auto" />
-                    <h1 className="text-xl font-extrabold tracking-tight text-ink-900">Palletizer</h1>
-                    <p className="text-sm text-ink-500">Inicia sesión para continuar</p>
+                <div className="mb-3 flex flex-col items-center">
+                    <img src="/palletizer.png" alt="Palletizer" className="h-28 w-auto object-contain" />
+
                 </div>
 
                 {status && (
