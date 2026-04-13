@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Palletizer — Casos de uso para demo</title>
+<style>
+  /* ── Reset & base ───────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.55;
+    color: #1a1a1a;
+    background: #fff;
+    padding: 32px 40px;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────── */
+  .doc-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-bottom: 3px solid #111;
+    padding-bottom: 16px;
+    margin-bottom: 28px;
+  }
+  .doc-header h1 {
+    font-size: 22pt;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+  }
+  .doc-header .sub {
+    font-size: 10pt;
+    color: #555;
+    margin-top: 4px;
+  }
+  .doc-header .meta {
+    text-align: right;
+    font-size: 9pt;
+    color: #666;
+    line-height: 1.7;
+  }
+  .badge {
+    display: inline-block;
+    background: #111;
+    color: #fff;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 6px;
+  }
+
+  /* ── Section headings ───────────────────────────────────────── */
+  .section-title {
+    font-size: 13pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #111;
+    border-top: 2px solid #111;
+    padding-top: 10px;
+    margin-top: 32px;
+    margin-bottom: 16px;
+  }
+
+  /* ── Case card ──────────────────────────────────────────────── */
+  .case {
+    border: 1.5px solid #ddd;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+    break-inside: avoid;
+  }
+  .case-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .case-num {
+    font-size: 9pt;
+    font-weight: 800;
+    color: #fff;
+    background: #111;
+    border-radius: 4px;
+    padding: 1px 7px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .case-title {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #111;
+  }
+  .context {
+    font-size: 9.5pt;
+    color: #555;
+    font-style: italic;
+    margin-bottom: 10px;
+  }
+
+  .steps {
+    list-style: none;
+    padding: 0;
+    margin-bottom: 10px;
+  }
+  .steps li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-bottom: 4px;
+    font-size: 10pt;
+  }
+  .steps li::before {
+    content: "→";
+    color: #888;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .highlight {
+    background: #f5f5f5;
+    border-left: 3px solid #111;
+    padding: 7px 12px;
+    border-radius: 0 4px 4px 0;
+    font-size: 10pt;
+  }
+  .highlight strong {
+    font-weight: 700;
+  }
+
+  /* ── Items table inside a case ──────────────────────────────── */
+  .items {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin: 8px 0 10px;
+  }
+  .items th {
+    background: #f0f0f0;
+    font-weight: 700;
+    text-align: left;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+  }
+  .items td {
+    padding: 3px 8px;
+    border: 1px solid #eee;
+    vertical-align: top;
+  }
+  .items tr:nth-child(even) td { background: #fafafa; }
+
+  /* ── Demo order table ───────────────────────────────────────── */
+  .order-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10pt;
+    margin-top: 10px;
+  }
+  .order-table th {
+    background: #111;
+    color: #fff;
+    text-align: left;
+    padding: 6px 12px;
+  }
+  .order-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid #eee;
+  }
+  .order-table tr:last-child td { border-bottom: none; }
+  .order-table tr:nth-child(even) td { background: #f8f8f8; }
+  .order-num {
+    font-weight: 800;
+    color: #111;
+    text-align: center;
+  }
+  .pill {
+    display: inline-block;
+    font-size: 8pt;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+  .pill-palletizer { background: #e8f4fd; color: #1a6fa8; }
+  .pill-admin      { background: #fdf0e8; color: #b85c00; }
+
+  /* ── Footer ─────────────────────────────────────────────────── */
+  .doc-footer {
+    margin-top: 36px;
+    border-top: 1px solid #ddd;
+    padding-top: 10px;
+    font-size: 8.5pt;
+    color: #999;
+    text-align: center;
+  }
+
+  /* ── Print ──────────────────────────────────────────────────── */
+  @media print {
+    body { padding: 0; font-size: 10pt; }
+    .section-title { margin-top: 20px; }
+    .no-print { display: none; }
+  }
+  @page {
+    margin: 18mm 16mm;
+    size: A4;
+  }
+</style>
+</head>
+<body>
+
+<!-- PRINT BUTTON (solo visible en pantalla) -->
+<div class="no-print" style="text-align:right; margin-bottom:16px;">
+  <button onclick="window.print()" style="padding:8px 18px;background:#111;color:#fff;border:none;border-radius:6px;font-size:10pt;cursor:pointer;font-weight:700;">
+    Imprimir / Guardar PDF
+  </button>
+</div>
+
+<!-- ── CABECERA ───────────────────────────────────────────────── -->
+<div class="doc-header">
+  <div>
+    <div class="badge">Documento interno</div>
+    <h1>Palletizer<br/>Casos de uso — Demo</h1>
+    <div class="sub">Aplicación de optimización de pallets para envíos de equipos IT</div>
+  </div>
+  <div class="meta">
+    Fecha: Abril 2026<br/>
+    Versión: 1.0<br/>
+    Pulsia Itech
+  </div>
+</div>
+
+<!-- ── CONTEXTO ───────────────────────────────────────────────── -->
+<p style="font-size:10pt; color:#444; margin-bottom:8px;">
+  La aplicación gestiona el cálculo automático de paletización para pedidos de equipos informáticos
+  desde <strong>50 hasta varios miles de unidades</strong>, con distintos modelos y tipos de equipo
+  (portátiles, mini PCs, torres SFF y torres MT). Compara carriers, optimiza el tipo de pallet
+  y genera documentación exportable.
+</p>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<div class="section-title">Palletizer — Casos de uso</div>
+
+<!-- CASO 1 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 1</span>
+    <span class="case-title">Pedido mixto de gran volumen a Madrid</span>
+  </div>
+  <p class="context">Una empresa renueva el parque informático de su sede central. Piden portátiles y torres SFF en una sola expedición.</p>
+
+  <table class="items">
+    <thead><tr><th>Modelo</th><th>Tipo</th><th>Cantidad</th></tr></thead>
+    <tbody>
+      <tr><td>HP EliteBook 840 G8</td><td>Portátil</td><td>200 uds.</td></tr>
+      <tr><td>Dell OptiPlex 3080 SFF</td><td>Torre SFF</td><td>80 uds.</td></tr>
+    </tbody>
+  </table>
+
+  <ul class="steps">
+    <li>País destino: <strong>España</strong> → Provincia: <strong>Madrid</strong></li>
+    <li>Modo transportista: <strong>Auto</strong> (compara los 3 carriers disponibles)</li>
+    <li>Revisar el desglose: pallets necesarios, tipos usados, coste total por carrier</li>
+    <li>Exportar el resultado (Excel o PDF)</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> comparativa automática entre Palletways, EuroFast y Budget Freight para un pedido real de 280 equipos mixtos. El sistema distribuye las cajas por tipo y calcula el número óptimo de pallets.
+  </div>
+</div>
+
+<!-- CASO 2 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 2</span>
+    <span class="case-title">Mismo pedido con transportista ya seleccionado</span>
+  </div>
+  <p class="context">El responsable de logística ya tiene acuerdo cerrado con Palletways para esa semana.</p>
+
+  <ul class="steps">
+    <li>Mismo destino y equipos que el Caso 1</li>
+    <li>Modo transportista: <strong>"Sé qué transportista voy a utilizar"</strong></li>
+    <li>Seleccionar únicamente <strong>Palletways</strong></li>
+    <li>Obtener el detalle de paletización solo para ese carrier</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> flexibilidad del modo manual. Cuando ya hay un acuerdo o preferencia, el sistema no fuerza la comparativa y trabaja directamente con el carrier elegido.
+  </div>
+</div>
+
+<!-- CASO 3 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 3</span>
+    <span class="case-title">Envío a Canarias — cobertura geográfica restringida</span>
+  </div>
+  <p class="context">Un cliente en Tenerife pide una partida de mini PCs para su delegación insular.</p>
+
+  <table class="items">
+    <thead><tr><th>Modelo</th><th>Tipo</th><th>Cantidad</th></tr></thead>
+    <tbody>
+      <tr><td>Lenovo ThinkCentre M720q Tiny</td><td>Mini PC</td><td>50 uds.</td></tr>
+      <tr><td>Dell OptiPlex 3090 Micro</td><td>Mini PC</td><td>50 uds.</td></tr>
+    </tbody>
+  </table>
+
+  <ul class="steps">
+    <li>País destino: <strong>España</strong> → Provincia: <strong>Tenerife</strong></li>
+    <li>Modo: <strong>Auto</strong></li>
+    <li>Observar que solo aparece <strong>Palletways</strong> (único carrier con cobertura en Canarias)</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> la lógica geográfica. El sistema sabe automáticamente qué carriers pueden servir cada destino y filtra sin que el usuario tenga que saberlo.
+  </div>
+</div>
+
+<!-- CASO 4 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 4</span>
+    <span class="case-title">Pedido internacional a Italia</span>
+  </div>
+  <p class="context">Un reacondicionador europeo con sede en Milán pide portátiles y mini PCs.</p>
+
+  <table class="items">
+    <thead><tr><th>Modelo</th><th>Tipo</th><th>Cantidad</th></tr></thead>
+    <tbody>
+      <tr><td>Lenovo ThinkPad T14 Gen 2</td><td>Portátil</td><td>150 uds.</td></tr>
+      <tr><td>Dell OptiPlex 7090 Micro</td><td>Mini PC</td><td>60 uds.</td></tr>
+    </tbody>
+  </table>
+
+  <ul class="steps">
+    <li>País destino: <strong>Italia</strong> → Zona: <strong>Lombardia (Milán)</strong></li>
+    <li>Modo: <strong>Auto</strong></li>
+    <li>Comparar EuroFast Logistics vs Budget Freight en destino internacional</li>
+    <li>Exportar el resultado</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> capacidad internacional. Las mismas funcionalidades de comparativa y optimización aplican a envíos a Italia, Rumanía o Polonia.
+  </div>
+</div>
+
+<!-- CASO 5 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 5</span>
+    <span class="case-title">Operación masiva de renovación — todos los tipos de equipo</span>
+  </div>
+  <p class="context">Gran contrato de renovación de parque informático completo: escritorios, portátiles y pequeño formato.</p>
+
+  <table class="items">
+    <thead><tr><th>Modelo</th><th>Tipo</th><th>Cantidad</th></tr></thead>
+    <tbody>
+      <tr><td>Dell Latitude 5420</td><td>Portátil</td><td>200 uds.</td></tr>
+      <tr><td>Dell OptiPlex 3080 Tower</td><td>Torre MT</td><td>100 uds.</td></tr>
+      <tr><td>HP EliteDesk 800 G5 SFF</td><td>Torre SFF</td><td>100 uds.</td></tr>
+      <tr><td>Lenovo ThinkCentre M90q Gen 2</td><td>Mini PC</td><td>100 uds.</td></tr>
+    </tbody>
+  </table>
+
+  <ul class="steps">
+    <li>País destino: <strong>España</strong> → Provincia: <strong>Barcelona</strong></li>
+    <li>Modo: <strong>Auto</strong></li>
+    <li>Observar la distribución automática en múltiples pallets de tipos distintos</li>
+    <li>Revisar los separadores de seguridad por capas en el desglose</li>
+    <li>Comparar el coste total entre los 3 carriers para 500 equipos</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> el caso de uso estrella. 500 equipos de 4 tipos distintos, paletizados automáticamente, con comparativa de precio en segundos. Sin este sistema, el cálculo sería manual y tomaría horas.
+  </div>
+</div>
+
+<!-- CASO 6 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 6</span>
+    <span class="case-title">Exportar resultado para el equipo de logística</span>
+  </div>
+  <p class="context">Una vez obtenido el resultado óptimo, el responsable necesita enviarlo al equipo de operaciones.</p>
+
+  <ul class="steps">
+    <li>Desde cualquier resultado de los casos anteriores</li>
+    <li>Pulsar <strong>Exportar Excel</strong> — obtener hoja con detalle completo por pallet</li>
+    <li>Pulsar <strong>Exportar PDF</strong> — obtener documento listo para archivar o adjuntar al pedido</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> integración con flujo de trabajo real. El resultado no se queda en pantalla: sale en formato estándar para el ERP, el transportista o el cliente.
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<div class="section-title">Panel de Administración — Casos de uso</div>
+
+<!-- CASO 7 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 7</span>
+    <span class="case-title">Incorporar un nuevo carrier — flujo completo</span>
+  </div>
+  <p class="context">La empresa firma acuerdo con un nuevo transportista. En menos de 5 minutos está operativo en el sistema.</p>
+
+  <ul class="steps">
+    <li><strong>Transportistas</strong> → "+ Nuevo transportista" → código: <code>dhl</code>, nombre: DHL Freight → Activo</li>
+    <li><strong>Geografía</strong> → España → DHL Freight → "+ Nueva zona" (Zona 1) → añadir provincias (Madrid, Guadalajara…)</li>
+    <li><strong>Tarifas</strong> → "+ Nueva tarifa" → seleccionar DHL Freight / Zona 1 / Light Pallet / tramo 1-1 / precio</li>
+    <li>Volver al Palletizer → Madrid → el nuevo carrier ya aparece en la comparativa</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> autonomía total del equipo de operaciones. Añadir un carrier, sus zonas, sus provincias y sus tarifas no requiere intervención técnica.
+  </div>
+</div>
+
+<!-- CASO 8 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 8</span>
+    <span class="case-title">Consultar y filtrar tarifas</span>
+  </div>
+  <p class="context">El responsable quiere verificar los precios de Palletways para envíos a la Zona 4 (Albacete/Toledo).</p>
+
+  <ul class="steps">
+    <li><strong>Tarifas</strong> → filtrar por transportista: <strong>Palletways</strong></li>
+    <li>Filtrar por zona: <strong>Zona 4</strong></li>
+    <li>Filtrar por tipo de pallet: <strong>Light Pallet</strong></li>
+    <li>Ver todos los tramos de precio (1 pallet, 2 pallets…)</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> los filtros en cascada permiten localizar cualquier tarifa en segundos, sobre una tabla que puede tener cientos de registros.
+  </div>
+</div>
+
+<!-- CASO 9 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 9</span>
+    <span class="case-title">Control de stock de cajas</span>
+  </div>
+  <p class="context">El equipo de almacén necesita saber qué cajas hay que reponer antes de la próxima operación grande.</p>
+
+  <ul class="steps">
+    <li><strong>Variantes de caja</strong> → filtrar tipo: <strong>Portátil</strong> → filtrar stock: <strong>Sin stock</strong></li>
+    <li>Identificar qué proveedor tiene rotura de stock</li>
+    <li>Editar la variante → actualizar el stock disponible</li>
+    <li>Quitar el filtro → verificar que el stock aparece actualizado</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> visibilidad operativa del inventario de embalaje. Antes de paletizar miles de equipos, el sistema ya sabe si hay cajas suficientes.
+  </div>
+</div>
+
+<!-- CASO 10 -->
+<div class="case">
+  <div class="case-header">
+    <span class="case-num">Caso 10</span>
+    <span class="case-title">Buscar y gestionar modelos de dispositivo</span>
+  </div>
+  <p class="context">Llega un nuevo modelo de portátil HP que no está en el catálogo. Hay que añadirlo antes de poder paletizarlo.</p>
+
+  <ul class="steps">
+    <li><strong>Modelos de dispositivo</strong> → buscar "EliteBook" → ver toda la gama HP disponible</li>
+    <li>Filtrar por tipo de caja "Portátil" → confirmar que el nuevo modelo no existe</li>
+    <li>"+ Nuevo modelo" → marca: HP / nombre: EliteBook 840 G10 / SKU / tipo caja: Portátil / peso: 1.33 kg</li>
+    <li>Volver al Palletizer → el nuevo modelo ya aparece en el buscador</li>
+  </ul>
+  <div class="highlight">
+    <strong>Qué demuestra:</strong> el catálogo de +70 modelos es ampliable en tiempo real. Un modelo nuevo tarda 30 segundos en estar operativo.
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<div class="section-title">Orden sugerido para la demo</div>
+
+<table class="order-table">
+  <thead>
+    <tr>
+      <th style="width:50px;">#</th>
+      <th>Caso</th>
+      <th style="width:110px;">Sección</th>
+      <th>Impacto principal</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="order-num">1</td>
+      <td><strong>Caso 5</strong> — Operación masiva (500 equipos, 4 tipos)</td>
+      <td><span class="pill pill-palletizer">Palletizer</span></td>
+      <td>Máximo impacto visual, caso de uso estrella</td>
+    </tr>
+    <tr>
+      <td class="order-num">2</td>
+      <td><strong>Caso 6</strong> — Exportar resultado</td>
+      <td><span class="pill pill-palletizer">Palletizer</span></td>
+      <td>Integración con flujo de trabajo real</td>
+    </tr>
+    <tr>
+      <td class="order-num">3</td>
+      <td><strong>Caso 3</strong> — Canarias (carrier único automático)</td>
+      <td><span class="pill pill-palletizer">Palletizer</span></td>
+      <td>Inteligencia geográfica sin intervención</td>
+    </tr>
+    <tr>
+      <td class="order-num">4</td>
+      <td><strong>Caso 4</strong> — Italia (pedido internacional)</td>
+      <td><span class="pill pill-palletizer">Palletizer</span></td>
+      <td>Capacidad de expansión internacional</td>
+    </tr>
+    <tr>
+      <td class="order-num">5</td>
+      <td><strong>Caso 7</strong> — Añadir nuevo carrier completo</td>
+      <td><span class="pill pill-admin">Admin</span></td>
+      <td>Autonomía operativa sin intervención técnica</td>
+    </tr>
+    <tr>
+      <td class="order-num">6</td>
+      <td><strong>Caso 8</strong> — Filtrar tarifas en cascada</td>
+      <td><span class="pill pill-admin">Admin</span></td>
+      <td>Gestión eficiente de datos tarifarios</td>
+    </tr>
+    <tr>
+      <td class="order-num">7</td>
+      <td><strong>Caso 9</strong> — Control de stock de cajas</td>
+      <td><span class="pill pill-admin">Admin</span></td>
+      <td>Visibilidad operativa de inventario</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<div class="doc-footer">
+  Palletizer · Documento de uso interno · Abril 2026
+</div>
+
+</body>
+</html>

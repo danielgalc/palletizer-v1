@@ -239,7 +239,7 @@ class PalletizationService
 
                     $simB = $this->simulatePackingForPalletType($typeB, $boxTypes, $remaining, $allowSeparators, null);
 
-                    if (($simA['pallet_count'] ?? 0) <= 0 && ($simB['pallet_count'] ?? 0) <= 0) {
+                    if (($simA['pallet_count'] ?? 0) <= 0 || ($simB['pallet_count'] ?? 0) <= 0) {
                         continue;
                     }
 

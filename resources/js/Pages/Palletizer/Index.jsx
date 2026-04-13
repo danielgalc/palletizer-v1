@@ -130,7 +130,7 @@ function formatPalletType(plan) {
       const countA = a.pallet_count || 0;
       const nameA = a.carrier_rate_name || a.pallet_type_name || "—";
 
-      parts.push(`${countA}× ${nameA}`);
+      if (countA > 0) parts.push(`${countA}× ${nameA}`);
     }
 
     // Procesar tipo B
@@ -139,7 +139,7 @@ function formatPalletType(plan) {
       const countB = b.pallet_count || 0;
       const nameB = b.carrier_rate_name || b.pallet_type_name || "—";
 
-      parts.push(`${countB}× ${nameB}`);
+      if (countB > 0) parts.push(`${countB}× ${nameB}`);
     }
 
     return parts.join(" + ");

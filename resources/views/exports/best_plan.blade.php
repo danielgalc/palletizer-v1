@@ -70,7 +70,7 @@
       <td style="width:40%;">
         <div class="meta-right">
           <strong>{{ $meta['company'] ?? 'Pulsia' }}</strong><br>
-          Destino: <strong>{{ $meta['province'] ?? '—' }}</strong> &middot; Zona <strong>{{ $meta['zone_id'] ?? '—' }}</strong><br>
+          Transportista: <strong>{{ $meta['carrier'] ?? '—' }}</strong> &middot; Destino: <strong>{{ $meta['destination'] ?? '—' }}</strong><br>
           Generado: {{ $meta['generated_at'] ?? now()->format('Y-m-d H:i') }}
         </div>
       </td>
@@ -81,23 +81,23 @@
 
     {{-- KPIs --}}
     @php
-      $total    = (float)($best['total_price'] ?? 0);
-      $count    = (int)($best['pallet_count'] ?? 0);
-      $avgPp    = $count > 0 ? $total / $count : 0;
-      $packed   = $best['packed_items'] ?? [];
-      $allBoxes = array_sum($packed);
-      $eurBox   = $allBoxes > 0 ? $total / $allBoxes : 0;
-      $boxCost  = (float)($best['metrics']['packaging_cost'] ?? 0);
-      $isMixed  = ($best['metrics']['mixed'] ?? false) === true;
+      $count      = (int)($best['pallet_count'] ?? 0);
+      $totalPrice = (float)($best['total_price'] ?? 0);
+      $boxCost    = (float)($best['total_box_cost'] ?? 0);
+      $grandTotal = isset($best['total_cost']) ? (float)$best['total_cost'] : ($totalPrice + $boxCost);
+      $avgPp      = $count > 0
+                        ? ((isset($best['price_per_pallet']) ? (float)$best['price_per_pallet'] : $totalPrice / $count))
+                        : 0;
+      $isMixed    = ($best['metrics']['mixed'] ?? false) === true;
     @endphp
 
     <table class="kpi-row">
       <tr>
         <td><div class="kpi-card"><div class="kpi-label">Pallets</div><div class="kpi-value">{{ $count }}</div></div></td>
         <td><div class="kpi-card"><div class="kpi-label">&euro; / pallet</div><div class="kpi-value">{{ number_format($avgPp, 2, ',', '.') }} &euro;</div></div></td>
-        <td><div class="kpi-card"><div class="kpi-label">&euro; / equipo</div><div class="kpi-value">{{ number_format($eurBox, 2, ',', '.') }} &euro;</div></div></td>
         <td><div class="kpi-card"><div class="kpi-label">Total cajas</div><div class="kpi-value">{{ number_format($boxCost, 2, ',', '.') }} &euro;</div></div></td>
-        <td><div class="kpi-card accent"><div class="kpi-label">Total</div><div class="kpi-value">{{ number_format($total, 2, ',', '.') }} &euro;</div></div></td>
+        <td><div class="kpi-card"><div class="kpi-label">Total Pallets</div><div class="kpi-value">{{ number_format($totalPrice, 2, ',', '.') }} &euro;</div></div></td>
+        <td><div class="kpi-card accent"><div class="kpi-label">Total</div><div class="kpi-value">{{ number_format($grandTotal, 2, ',', '.') }} &euro;</div></div></td>
       </tr>
     </table>
 

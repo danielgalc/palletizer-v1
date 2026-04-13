@@ -285,31 +285,47 @@ class MasterDataSeeder extends Seeder
             ['code'=>'budget_freight','name'=>'Budget Freight',    'is_active'=>1,'created_at'=>now(),'updated_at'=>now()],
         ], ['code'], ['name','is_active','updated_at']);
 
-        $carrierId = fn(string $code) => DB::table('carriers')->where('code', $code)->value('id');
+        $getCarrierId = fn(string $code) => DB::table('carriers')->where('code', $code)->value('id');
 
-        // ─────────────────────────────────────────────────────────────────────
-        // ZONES
-        // ─────────────────────────────────────────────────────────────────────
-        $zoneIds = [];
-        $intlZoneIdsByName = [];
+        $palletwaysId = $getCarrierId('palletways');
+        $euroFastId   = $getCarrierId('euro_fast');
+        $budgetId     = $getCarrierId('budget_freight');
 
+        // Zonas carrier-scoped: cada carrier tiene sus propias zonas.
+        // Palletways : ES Zona 1-9 y 11-14  +  PT Zona 10
+        // EuroFast   : ES Zona 1-12  +  IT/RO/PL zonas regionales
+        // Budget     : ES Zona 1-12  +  IT/RO/PL zonas regionales
         $esId = $countryId('ES');
-        for ($i = 1; $i <= 14; $i++) {
-            if ($i === 10) continue;
-            $zoneName = "Zona {$i}";
+        $ptId = $countryId('PT');
+
+        $upsertZone = function (int $ctyId, string $name, int $crrId) {
             DB::table('zones')->updateOrInsert(
-                ['country_id' => $esId, 'name' => $zoneName],
+                ['country_id' => $ctyId, 'name' => $name, 'carrier_id' => $crrId],
                 ['updated_at' => now(), 'created_at' => now()]
             );
-            $zoneIds[$i] = DB::table('zones')->where('country_id', $esId)->where('name', $zoneName)->value('id');
+            return DB::table('zones')
+                ->where('country_id', $ctyId)
+                ->where('name', $name)
+                ->where('carrier_id', $crrId)
+                ->value('id');
+        };
+
+        $palletwaysZoneIds = [];
+        for ($i = 1; $i <= 14; $i++) {
+            if ($i === 10) continue;
+            $palletwaysZoneIds[$i] = $upsertZone($esId, "Zona {$i}", $palletwaysId);
+        }
+        $palletwaysZoneIds[10] = $upsertZone($ptId, 'Zona 10', $palletwaysId);
+
+        $euroFastZoneIds = [];
+        for ($i = 1; $i <= 12; $i++) {
+            $euroFastZoneIds[$i] = $upsertZone($esId, "Zona {$i}", $euroFastId);
         }
 
-        $ptId = $countryId('PT');
-        DB::table('zones')->updateOrInsert(
-            ['country_id' => $ptId, 'name' => 'Zona 10'],
-            ['updated_at' => now(), 'created_at' => now()]
-        );
-        $zoneIds[10] = DB::table('zones')->where('country_id', $ptId)->where('name', 'Zona 10')->value('id');
+        $budgetZoneIds = [];
+        for ($i = 1; $i <= 12; $i++) {
+            $budgetZoneIds[$i] = $upsertZone($esId, "Zona {$i}", $budgetId);
+        }
 
         $realZones = [
             'IT' => ['Lombardia (Milán)', 'Lazio (Roma)', 'Campania (Nápoles)', 'Veneto (Venecia)', 'Piemonte (Turín)'],
@@ -317,15 +333,12 @@ class MasterDataSeeder extends Seeder
             'RO' => ['București-Ilfov (Bucarest)', 'Cluj (Cluj-Napoca)', 'Timiș (Timișoara)', 'Iași', 'Constanța'],
         ];
 
+        $intlZoneIds = [];
         foreach ($realZones as $cc => $names) {
-            $cid = $countryId($cc);
+            $ctyId = $countryId($cc);
             foreach ($names as $zoneName) {
-                DB::table('zones')->updateOrInsert(
-                    ['country_id' => $cid, 'name' => $zoneName],
-                    ['updated_at' => now(), 'created_at' => now()]
-                );
-                $intlZoneIdsByName[$cc][$zoneName] = DB::table('zones')
-                    ->where('country_id', $cid)->where('name', $zoneName)->value('id');
+                $intlZoneIds[$cc]['euro_fast'][$zoneName]      = $upsertZone($ctyId, $zoneName, $euroFastId);
+                $intlZoneIds[$cc]['budget_freight'][$zoneName] = $upsertZone($ctyId, $zoneName, $budgetId);
             }
         }
 
@@ -347,12 +360,28 @@ class MasterDataSeeder extends Seeder
             13 => ['Gran Canaria','Tenerife'],
             14 => ['Fuenteventura','Lanzarote','La Palma','La Gomera','El Hierro'],
         ];
+        // Zonas 1-12: Palletways + EuroFast + Budget Freight
+        // Zonas 13-14 (Canarias): solo Palletways
+        $carrierZoneMap = [
+            'palletways'    => $palletwaysZoneIds,
+            'euro_fast'     => $euroFastZoneIds,
+            'budget_freight'=> $budgetZoneIds,
+        ];
+
         foreach ($zoneProvinces as $zoneNum => $provList) {
             foreach ($provList as $provName) {
                 DB::table('provinces')->updateOrInsert(
                     ['name' => $provName],
-                    ['zone_id' => $zoneIds[$zoneNum], 'updated_at' => now(), 'created_at' => now()]
+                    ['updated_at' => now(), 'created_at' => now()]
                 );
+                $provId = DB::table('provinces')->where('name', $provName)->value('id');
+
+                foreach ($carrierZoneMap as $crrZones) {
+                    if (!isset($crrZones[$zoneNum])) continue;
+                    DB::table('province_zones')->updateOrInsert(
+                        ['province_id' => $provId, 'zone_id' => $crrZones[$zoneNum]]
+                    );
+                }
             }
         }
 
@@ -378,10 +407,10 @@ class MasterDataSeeder extends Seeder
         $full=[1=>[68.37,65.81,62.70,60.39,59.55],2=>[73.12,70.47,67.27,64.95,64.07],3=>[75.40,72.92,69.59,68.75,67.93],4=>[80.41,77.91,73.74,72.92,71.25],5=>[84.65,82.99,77.16,76.34,75.50],6=>[92.14,89.65,82.99,82.17,81.31],7=>[98.11,95.56,88.80,87.93,87.10],8=>[111.68,108.28,100.67,99.82,98.11],9=>[126.25,122.93,114.61,113.79,112.12],10=>[169.94,167.39,156.31,154.61,152.06],11=>[264.77,260.05,256.91,248.28,242.00],12=>[282.00,278.08,274.15,259.26,252.21]];
         foreach ($full as $z=>$prices) for ($i=1;$i<=5;$i++) $rates[]=['zone'=>$z,'pallet'=>'full','min'=>$i,'max'=>$i,'price'=>$prices[$i-1]];
 
-        $palletwaysId = $carrierId('palletways');
         foreach ($rates as $r) {
+            if (!isset($palletwaysZoneIds[$r['zone']])) continue;
             DB::table('rates')->updateOrInsert(
-                ['carrier_id'=>$palletwaysId,'zone_id'=>$zoneIds[$r['zone']],'pallet_type_id'=>$palletId($r['pallet']),'min_pallets'=>$r['min'],'max_pallets'=>$r['max']],
+                ['carrier_id'=>$palletwaysId,'zone_id'=>$palletwaysZoneIds[$r['zone']],'pallet_type_id'=>$palletId($r['pallet']),'min_pallets'=>$r['min'],'max_pallets'=>$r['max']],
                 ['price_eur'=>$r['price'],'carrier_rate_name'=>$this->getPalletwaysRateName($r['pallet']),'updated_at'=>now(),'created_at'=>now()]
             );
         }
@@ -389,9 +418,6 @@ class MasterDataSeeder extends Seeder
         // ─────────────────────────────────────────────────────────────────────
         // RATES — EURO_FAST & BUDGET_FREIGHT
         // ─────────────────────────────────────────────────────────────────────
-        $euroFastId = $carrierId('euro_fast');
-        $budgetId   = $carrierId('budget_freight');
-
         $carrierOffer = [
             'euro_fast'      => ['quarter','half','extra_light','light','full'],
             'budget_freight' => ['half','light','full'],
@@ -402,15 +428,21 @@ class MasterDataSeeder extends Seeder
         ];
         $typeAdj = ['mini_quarter'=>1.02,'quarter'=>1.03,'half'=>1.04,'extra_light'=>1.00,'light'=>1.00,'full'=>1.06];
 
-        foreach (['euro_fast'=>$euroFastId,'budget_freight'=>$budgetId] as $carrierCode=>$cid) {
+        $otherCarriers = [
+            'euro_fast'      => [$euroFastId, $euroFastZoneIds],
+            'budget_freight' => [$budgetId,   $budgetZoneIds],
+        ];
+
+        foreach ($otherCarriers as $carrierCode => [$cid, $crrZoneIds]) {
             $offer = $carrierOffer[$carrierCode] ?? [];
             foreach ($rates as $r) {
                 if (($r['zone']??0) < 1 || ($r['zone']??0) > 12) continue;
+                if (!isset($crrZoneIds[$r['zone']])) continue;
                 if (!in_array($r['pallet'], $offer, true)) continue;
                 $tramo = (int)($r['min']??1);
                 $price = round(((float)$r['price']) * ($carrierTramoAdj[$carrierCode][$tramo]??1.00) * ($typeAdj[$r['pallet']]??1.00), 2);
                 DB::table('rates')->updateOrInsert(
-                    ['carrier_id'=>$cid,'zone_id'=>$zoneIds[$r['zone']],'pallet_type_id'=>$palletId($r['pallet']),'min_pallets'=>$r['min'],'max_pallets'=>$r['max']],
+                    ['carrier_id'=>$cid,'zone_id'=>$crrZoneIds[$r['zone']],'pallet_type_id'=>$palletId($r['pallet']),'min_pallets'=>$r['min'],'max_pallets'=>$r['max']],
                     ['price_eur'=>$price,'updated_at'=>now(),'created_at'=>now()]
                 );
             }
@@ -426,12 +458,12 @@ class MasterDataSeeder extends Seeder
         foreach (['IT','RO','PL'] as $cc) {
             foreach (['euro_fast'=>$euroFastId,'budget_freight'=>$budgetId] as $carrierCode=>$cid) {
                 foreach (($realZones[$cc]??[]) as $zoneName) {
-                    $zoneId = $intlZoneIdsByName[$cc][$zoneName]??null;
-                    if (!$zoneId) continue;
+                    $zId = $intlZoneIds[$cc][$carrierCode][$zoneName] ?? null;
+                    if (!$zId) continue;
                     foreach (['light','full'] as $pCode) {
                         foreach ([1,2,3] as $n) {
                             DB::table('rates')->updateOrInsert(
-                                ['carrier_id'=>$cid,'zone_id'=>$zoneId,'pallet_type_id'=>$palletId($pCode),'min_pallets'=>$n,'max_pallets'=>$n],
+                                ['carrier_id'=>$cid,'zone_id'=>$zId,'pallet_type_id'=>$palletId($pCode),'min_pallets'=>$n,'max_pallets'=>$n],
                                 ['price_eur'=>round($base[$cc][$carrierCode]*$mult[$pCode]*$disc[$n],2),'updated_at'=>now(),'created_at'=>now()]
                             );
                         }

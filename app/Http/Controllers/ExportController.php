@@ -53,8 +53,11 @@ class ExportController extends Controller
         ]);
         $v->validate();
 
-        // 1) Resolver zona
-        $zoneId = $this->resolveZoneId($request);
+        // 1) Contexto destino
+        $isES      = $request->country_code === 'ES';
+        $province  = $isES ? DB::table('provinces')->where('id', $request->province_id)->first() : null;
+        $provinceId = $isES ? (int)$request->province_id : null;
+        $zoneId     = !$isES ? (int)($request->zone_id ?? 0) : null;
 
         // 2) Preparar items (lines tienen prioridad sobre contadores directos)
         $items = $this->buildItems($request);
@@ -72,7 +75,7 @@ class ExportController extends Controller
         }
 
         // 3) Calcular
-        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators, $carrierIds);
+        $plan = $service->calculateBestPlanAcrossCarriers($items, $provinceId, $zoneId, $allowedTypes, $allowSeparators, $carrierIds);
         if (!empty($plan['error'])) {
             abort(422, $plan['error']);
         }
@@ -87,9 +90,11 @@ class ExportController extends Controller
         $metrics = is_array($best['metrics'] ?? null) ? $best['metrics'] : [];
         $warnings = is_array($best['warnings'] ?? null) ? $best['warnings'] : [];
 
-        $total = (float)($best['total_price'] ?? 0);
-        $count = (int)($best['pallet_count'] ?? 0);
-        $avg = ($count > 0) ? ($total / $count) : 0;
+        $total      = (float)($best['total_price'] ?? 0);
+        $boxCost    = (float)($best['total_box_cost'] ?? 0);
+        $grandTotal = isset($best['total_cost']) ? (float)$best['total_cost'] : ($total + $boxCost);
+        $count      = (int)($best['pallet_count'] ?? 0);
+        $avg        = ($count > 0) ? ($total / $count) : 0;
 
         $isMixed = (bool)($metrics['mixed'] ?? false);
         $mixTypes = is_array($metrics['types'] ?? null) ? $metrics['types'] : [];
@@ -115,12 +120,15 @@ class ExportController extends Controller
         // Bloque info — etiquetas en negrita
         $row = 4;
         $infoStart = $row;
-        $summary->setCellValue("A{$row}", 'Provincia');
-        $summary->setCellValue("B{$row}", (string)($province->name ?? ''));
+        $summary->setCellValue("A{$row}", 'Transportista');
+        $summary->setCellValue("B{$row}", (string)($best['carrier_name'] ?? ''));
         $row++;
 
-        $summary->setCellValue("A{$row}", 'Zona');
-        $summary->setCellValue("B{$row}", $zoneId);
+        $summary->setCellValue("A{$row}", 'Destino');
+        $summary->setCellValue("B{$row}", $isES
+            ? (string)($province->name ?? '')
+            : (string)($best['zone_name'] ?? $request->zone_id ?? '')
+        );
         $row++;
 
         $summary->setCellValue("A{$row}", 'Tipo de plan');
@@ -131,13 +139,23 @@ class ExportController extends Controller
         $summary->setCellValue("B{$row}", $count);
         $row++;
 
-        $summary->setCellValue("A{$row}", 'Total');
+        $summary->setCellValue("A{$row}", '€/pallet (promedio)');
+        $summary->setCellValue("B{$row}", $avg);
+        $this->moneyFormat($summary, "B{$row}:B{$row}");
+        $row++;
+
+        $summary->setCellValue("A{$row}", 'Total cajas');
+        $summary->setCellValue("B{$row}", $boxCost);
+        $this->moneyFormat($summary, "B{$row}:B{$row}");
+        $row++;
+
+        $summary->setCellValue("A{$row}", 'Total Pallets');
         $summary->setCellValue("B{$row}", $total);
         $this->moneyFormat($summary, "B{$row}:B{$row}");
         $row++;
 
-        $summary->setCellValue("A{$row}", '€/pallet (promedio)');
-        $summary->setCellValue("B{$row}", $avg);
+        $summary->setCellValue("A{$row}", 'Total');
+        $summary->setCellValue("B{$row}", $grandTotal);
         $this->moneyFormat($summary, "B{$row}:B{$row}");
         $row++;
 
@@ -474,8 +492,12 @@ class ExportController extends Controller
         ]);
         $v->validate();
 
-        $zoneId = $this->resolveZoneId($request);
-        $items  = $this->buildItems($request);
+        $isES       = $request->country_code === 'ES';
+        $province   = $isES ? DB::table('provinces')->where('id', $request->province_id)->first() : null;
+        $provinceId = $isES ? (int)$request->province_id : null;
+        $zoneId     = !$isES ? (int)($request->zone_id ?? 0) : null;
+
+        $items = $this->buildItems($request);
 
         $allowSeparators = (bool)($request->allow_separators ?? true);
 
@@ -489,7 +511,7 @@ class ExportController extends Controller
             $carrierIds = $request->carrier_ids ?? [];
         }
 
-        $plan = $service->calculateBestPlanAcrossCarriers($zoneId, $items, $allowedTypes, $allowSeparators, $carrierIds);
+        $plan = $service->calculateBestPlanAcrossCarriers($items, $provinceId, $zoneId, $allowedTypes, $allowSeparators, $carrierIds);
         if (!empty($plan['error'])) abort(422, $plan['error']);
 
         $best = $plan['best'] ?? null;
@@ -499,12 +521,12 @@ class ExportController extends Controller
         $count = (int)($best['pallet_count'] ?? 0);
         $avg   = ($count > 0) ? ($total / $count) : 0;
 
-        $province = DB::table('provinces')->where('id', $request->province_id)->first();
-
         $meta = [
             'company'      => 'Pulsia',
-            'province'     => (string)($province->name ?? ''),
-            'zone_id'      => $zoneId,
+            'carrier'      => (string)($best['carrier_name'] ?? ''),
+            'destination'  => $isES
+                ? (string)($province->name ?? '')
+                : (string)($best['zone_name'] ?? ''),
             'generated_at' => now()->format('Y-m-d H:i'),
         ];
 
@@ -522,23 +544,6 @@ class ExportController extends Controller
     // ======================
     // Helpers internos
     // ======================
-
-    private function resolveZoneId(Request $request): int
-    {
-        if ($request->country_code !== 'ES') {
-            $zoneId = (int)($request->zone_id ?? 0);
-            if ($zoneId <= 0) abort(422, 'zone_id inválido');
-            return $zoneId;
-        }
-
-        $province = DB::table('provinces')->where('id', $request->province_id)->first();
-        if (!$province) abort(422, 'Provincia no encontrada');
-
-        $zoneId = (int)($province->zone_id ?? 0);
-        if ($zoneId <= 0) abort(422, 'La provincia no tiene zone_id válido');
-
-        return $zoneId;
-    }
 
     private function buildItems(Request $request): array
     {
