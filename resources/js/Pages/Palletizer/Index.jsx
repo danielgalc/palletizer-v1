@@ -2072,16 +2072,16 @@ export default function Index({ result }) {
               </div>
 
               <div className="rounded-xl border border-ink-100 p-4">
-                <div className="flex gap-3">
-                  <div className="text-md text-ink-900">
-                    {best?.carrier_name && (
-                      <span>
-                        <b>Transportista:</b> <i>{best.carrier_name}</i>
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-md text-ink-900">
-                    <b>Tarifa:</b> <i>{formatPalletType(best)}</i>
+                <div className="flex flex-wrap gap-x-10 gap-y-2">
+                  {best?.carrier_name && (
+                    <div className="text-sm text-ink-900">
+                      <div className="text-[11px] font-extrabold uppercase tracking-wider text-ink-400 mb-0.5">Transportista</div>
+                      <span className="font-semibold">{best.carrier_name}</span>
+                    </div>
+                  )}
+                  <div className="text-sm text-ink-900 min-w-0">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-ink-400 mb-0.5">Tarifa</div>
+                    <span className="font-semibold">{formatPalletType(best)}</span>
                   </div>
                 </div>
 
