@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🚚 Palletizer
+# Palletizer
 
 **Optimización inteligente de paletizado para envíos de equipos informáticos**
 
