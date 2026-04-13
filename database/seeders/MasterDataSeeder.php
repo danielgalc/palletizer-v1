@@ -23,6 +23,15 @@ class MasterDataSeeder extends Seeder
                 'created_at'        => now(),
                 'updated_at'        => now(),
             ],
+            [
+                'name'              => 'Alfonso',
+                'email'             => 'alfonso@palletizer.com',
+                'password'          => Hash::make('palletizerpulsia'),
+                'role'              => 'admin',
+                'email_verified_at' => now(),
+                'created_at'        => now(),
+                'updated_at'        => now(),
+            ],
         ], ['email'], ['name', 'role', 'updated_at']);
 
         // ─────────────────────────────────────────────────────────────────────

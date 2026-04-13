@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useForm } from "@inertiajs/react";
+import { useForm, usePage } from "@inertiajs/react";
 import AppLayout from "@/Layouts/AppLayout";
 
 function normalize(str) {
@@ -146,6 +146,7 @@ function formatPalletType(plan) {
   }
 
   // CASO 2: Plan mono-tipo
+  const count = Number(plan.pallet_count ?? plan.pallets_count ?? 0);
   const technical = plan.pallet_type_name || "—";
   const commercial = plan.carrier_rate_name;
 
@@ -156,11 +157,8 @@ function formatPalletType(plan) {
     "$1 cm ($2cm altura, $3kg)"
   );
 
-  if (commercial) {
-    return `${commercial} — ${enhancedTech}`;
-  }
-
-  return enhancedTech;
+  const label = commercial ? `${commercial} — ${enhancedTech}` : enhancedTech;
+  return count > 0 ? `${count}× ${label}` : label;
 }
 
 function getPalletCounts(p) {
@@ -337,6 +335,8 @@ function computeRemainingCapacity(p, palletMeta) {
 }
 
 export default function Index({ result }) {
+  const { auth } = usePage().props;
+  const isAdmin = auth?.user?.role === "admin";
   const { data, setData, post, processing, errors } = useForm({
     country_code: "",
     zone_id: null,
@@ -2473,7 +2473,7 @@ export default function Index({ result }) {
                           const carrierName = a?.carrier_name ?? "—";
                           const carrierCode = a?.carrier_code ?? "";
 
-                          const { short: typeShort, detail: typeDetail } = splitTypeLabel(a?.pallet_type_name);
+                          const { short: typeShort, detail: typeDetail } = splitTypeLabel(formatPalletType(a));
 
                           const palletsCount = a?.pallet_count ?? a?.pallets_count;
                           const pp = pricePerPallet(a);
@@ -2508,7 +2508,7 @@ export default function Index({ result }) {
                                   <div className="min-w-0">
                                     <div
                                       className="max-w-[520px] truncate font-semibold px-2 py-1 rounded text-ink-500 ring-1 ring-ink-100 text-xs"
-                                      title={String(a?.pallet_type_name ?? "")}
+                                      title={formatPalletType(a)}
                                     >
                                       {typeShort} {typeDetail || "—"}
                                     </div>
@@ -2790,23 +2790,44 @@ export default function Index({ result }) {
                                       </div>
                                       <div className="mt-1 flex items-center gap-2">
                                         {/* Badge disponibilidad */}
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleVariantAvailability(id)}
-                                          disabled={isSaving}
-                                          title={isAvailable ? "Marcar como no disponible" : "Marcar como disponible"}
-                                          className={[
-                                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold transition",
-                                            "ring-1 disabled:opacity-60 cursor-pointer",
-                                            isAvailable
-                                              ? "bg-green-50 text-green-700 ring-green-200 hover:bg-green-100"
-                                              : "bg-red-50 text-red-600 ring-red-200 hover:bg-red-100",
-                                          ].join(" ")}
-                                        >
-                                          {isSaving ? "…" : isAvailable ? "✓ Disponible" : "✗ No disponible"}
-                                        </button>
+                                        {isAdmin ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleVariantAvailability(id)}
+                                            disabled={isSaving}
+                                            title={isAvailable ? "Marcar como no disponible" : "Marcar como disponible"}
+                                            className={[
+                                              "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors",
+                                              "ring-1 ring-inset disabled:opacity-50",
+                                              isAvailable
+                                                ? "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100"
+                                                : "bg-red-50 text-red-600 ring-red-200 hover:bg-red-100",
+                                            ].join(" ")}
+                                          >
+                                            <span className={[
+                                              "h-1.5 w-1.5 rounded-full flex-shrink-0",
+                                              isAvailable ? "bg-emerald-500" : "bg-red-400",
+                                            ].join(" ")} />
+                                            {isSaving ? "Guardando…" : isAvailable ? "Disponible" : "No disponible"}
+                                          </button>
+                                        ) : (
+                                          <span
+                                            className={[
+                                              "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
+                                              isAvailable
+                                                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                                                : "bg-red-50 text-red-600 ring-red-200",
+                                            ].join(" ")}
+                                          >
+                                            <span className={[
+                                              "h-1.5 w-1.5 rounded-full flex-shrink-0",
+                                              isAvailable ? "bg-emerald-500" : "bg-red-400",
+                                            ].join(" ")} />
+                                            {isAvailable ? "Disponible" : "No disponible"}
+                                          </span>
+                                        )}
                                         {isSelected && (
-                                          <span className="text-[10px] font-extrabold text-ink-400">en uso</span>
+                                          <span className="inline-flex items-center rounded-md bg-ink-100 px-2 py-0.5 text-[11px] font-semibold text-ink-500 ring-1 ring-inset ring-ink-200">En uso</span>
                                         )}
                                         {stockMsgByVariantId?.[id] ? (
                                           <span className="text-[10px] font-extrabold text-red-600">
@@ -2847,88 +2868,6 @@ export default function Index({ result }) {
                   })}
                 </div>
               )}
-
-              {/* Mantengo tus box_types como fallback, sin tocar nada fuera del modal */}
-              <details className="mt-4 rounded-2xl border border-ink-100 bg-ink-50 p-4">
-                <summary className="cursor-pointer text-sm font-extrabold text-ink-900">
-                  Editar dimensiones base (fallback)
-                </summary>
-
-                <div className="mt-3">
-                  {loadingBoxTypes ? (
-                    <div className="text-sm text-ink-500">Cargando…</div>
-                  ) : boxTypesError ? (
-                    <div className="text-sm font-semibold text-red-600">{boxTypesError}</div>
-                  ) : boxTypes.length === 0 ? (
-                    <div className="text-sm text-ink-500">No hay tipos de caja.</div>
-                  ) : (
-                    <div className="grid gap-3">
-                      {boxTypes.map((b) => (
-                        <div key={b.id} className="rounded-2xl border border-ink-100 bg-white p-4">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="text-sm font-extrabold text-ink-900">{b.name}</div>
-                              <div className="mt-1 text-xs text-ink-500">{b.code}</div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              {boxMsgById[b.id] && (
-                                <div className="text-xs font-extrabold text-ink-700">{boxMsgById[b.id]}</div>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => saveBoxType(b.id)}
-                                disabled={!!savingBoxById[b.id]}
-                                className="rounded-xl bg-ink-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-ink-800 disabled:opacity-60"
-                              >
-                                {savingBoxById[b.id] ? "Guardando…" : "Guardar"}
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 grid grid-cols-4 gap-3">
-                            <Field label="Largo (cm)">
-                              <input
-                                type="number"
-                                value={b.length_cm}
-                                onChange={(e) => onBoxChange(b.id, "length_cm", Number(e.target.value))}
-                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </Field>
-
-                            <Field label="Ancho (cm)">
-                              <input
-                                type="number"
-                                value={b.width_cm}
-                                onChange={(e) => onBoxChange(b.id, "width_cm", Number(e.target.value))}
-                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </Field>
-
-                            <Field label="Alto (cm)">
-                              <input
-                                type="number"
-                                value={b.height_cm}
-                                onChange={(e) => onBoxChange(b.id, "height_cm", Number(e.target.value))}
-                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </Field>
-
-                            <Field label="Peso (kg)">
-                              <input
-                                type="number"
-                                value={b.weight_kg}
-                                onChange={(e) => onBoxChange(b.id, "weight_kg", Number(e.target.value))}
-                                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-                              />
-                            </Field>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </details>
 
               <div className="mt-4 rounded-xl border border-ink-100 bg-white p-4 text-xs text-ink-600">
                 <b>Nota:</b> Marca como <b>Disponible</b> las cajas que tengas en stock. Solo las cajas marcadas disponibles y seleccionadas con <b>Usar</b> se tendrán en cuenta al calcular.

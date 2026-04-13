@@ -791,12 +791,12 @@ class PalletizationService
                 $layerWeightG += $vertWeightG;
                 // ────────────────────────────────────────────────────────────────────
 
+                $layer['height_cm'] = $info[$chosen]['height_cm'];
+                $layer['weight_g']  = (int) $layerWeightG;
+                $layer['weight_kg'] = round(((int)$layerWeightG) / 1000, 3);
                 $pallet['layers'][] = $layer;
                 $pallet['height_cm'] += $info[$chosen]['height_cm'];
                 $pallet['weight_g']  += (int)$layerWeightG;
-
-                $layer['weight_g']  = (int) $layerWeightG;
-                $layer['weight_kg'] = round(((int)$layerWeightG) / 1000, 3);
 
                 // derivado "bonito" (exacto a gramos)
                 $pallet['weight_kg'] = round(((int)$pallet['weight_g']) / 1000, 3);
