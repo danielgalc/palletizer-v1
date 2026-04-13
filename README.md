@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="public/palletizer_icon_final.png" alt="Palletizer" width="80" />
+
 # Palletizer
 
 **Optimización inteligente de paletizado para envíos de equipos informáticos**
