@@ -999,35 +999,65 @@ class PalletizationService
         return (float) $rate->price_eur * $palletCount;
     }
 
+    /**
+     * Calcula el mejor plan comparando todos los transportistas disponibles.
+     *
+     * - Para España ($provinceId): cada transportista tiene su propia zona asignada
+     *   a esa provincia (province_zones → zones). Se busca la zona de cada carrier
+     *   y se calcula su plan independientemente.
+     *
+     * - Para otros países ($zoneId): la zona ya implica el transportista (zones.carrier_id).
+     *   Se obtiene el carrier de la zona y se calcula un único plan.
+     */
     public function calculateBestPlanAcrossCarriers(
-        int $zoneId,
         array $items,
+        ?int $provinceId = null,
+        ?int $zoneId = null,
         ?array $allowedPalletTypeCodes = null,
         bool $allowSeparators = true,
         ?array $carrierIds = null
     ): array {
-        $carrierRows = DB::table('rates')
-            ->join('carriers', 'carriers.id', '=', 'rates.carrier_id')
-            ->where('rates.zone_id', $zoneId)
-            ->where('carriers.is_active', true)
-            ->select('carriers.id', 'carriers.code', 'carriers.name')
-            ->distinct()
-            ->get();
-
-        // Si el usuario ha seleccionado carriers en UI, calculamos SOLO con esos.
-        if (is_array($carrierIds) && count($carrierIds) > 0) {
-            $ids = array_values(array_unique(array_filter(array_map('intval', $carrierIds), fn($v) => $v > 0)));
-            $carrierRows = $carrierRows->whereIn('id', $ids)->values();
+        // Construir mapa carrier → zone_id
+        if ($provinceId !== null) {
+            // España: cada carrier puede tener su propia zona para esta provincia
+            $carrierZones = DB::table('province_zones as pz')
+                ->join('zones as z', 'z.id', '=', 'pz.zone_id')
+                ->join('carriers as c', 'c.id', '=', 'z.carrier_id')
+                ->where('pz.province_id', $provinceId)
+                ->where('c.is_active', true)
+                ->select('c.id as carrier_id', 'c.code as carrier_code', 'c.name as carrier_name', 'z.id as zone_id')
+                ->get();
+        } else {
+            // Otro país: la zona ya implica el carrier
+            $cz = DB::table('zones as z')
+                ->join('carriers as c', 'c.id', '=', 'z.carrier_id')
+                ->where('z.id', $zoneId)
+                ->where('c.is_active', true)
+                ->select('c.id as carrier_id', 'c.code as carrier_code', 'c.name as carrier_name', 'z.id as zone_id')
+                ->first();
+            $carrierZones = $cz ? collect([$cz]) : collect();
         }
 
-        if ($carrierRows->isEmpty()) {
-            return ['error' => 'No hay transportistas con tarifas para esa zona (o no coinciden con la selección).'];
+        // Filtrar por selección manual de carriers en la UI
+        if (is_array($carrierIds) && count($carrierIds) > 0) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', $carrierIds), fn($v) => $v > 0)));
+            $carrierZones = $carrierZones->whereIn('carrier_id', $ids)->values();
+        }
+
+        if ($carrierZones->isEmpty()) {
+            return ['error' => 'No hay transportistas con tarifas para ese destino (o no coinciden con la selección).'];
         }
 
         $allCandidates = [];
 
-        foreach ($carrierRows as $c) {
-            $plan = $this->calculateBestPlan($zoneId, $items, $allowedPalletTypeCodes, $allowSeparators, (int)$c->id);
+        foreach ($carrierZones as $cz) {
+            $plan = $this->calculateBestPlan(
+                (int) $cz->zone_id,
+                $items,
+                $allowedPalletTypeCodes,
+                $allowSeparators,
+                (int) $cz->carrier_id
+            );
 
             if (!empty($plan['error'])) {
                 continue;
@@ -1037,17 +1067,17 @@ class PalletizationService
             $alts = $plan['alternatives'] ?? [];
 
             if ($best) {
-                $best['carrier_id'] = (int)$c->id;
-                $best['carrier_code'] = (string)$c->code;
-                $best['carrier_name'] = (string)$c->name;
+                $best['carrier_id']   = (int) $cz->carrier_id;
+                $best['carrier_code'] = (string) $cz->carrier_code;
+                $best['carrier_name'] = (string) $cz->carrier_name;
                 $allCandidates[] = $best;
             }
 
             if (is_array($alts)) {
                 foreach ($alts as $a) {
-                    $a['carrier_id'] = (int)$c->id;
-                    $a['carrier_code'] = (string)$c->code;
-                    $a['carrier_name'] = (string)$c->name;
+                    $a['carrier_id']   = (int) $cz->carrier_id;
+                    $a['carrier_code'] = (string) $cz->carrier_code;
+                    $a['carrier_name'] = (string) $cz->carrier_name;
                     $allCandidates[] = $a;
                 }
             }
@@ -1057,17 +1087,16 @@ class PalletizationService
             return ['error' => 'No se pudo calcular ningún plan con las tarifas disponibles.'];
         }
 
-        // Igual que en calculateBestPlan: ordenar por total_price (sin cajas)
         usort($allCandidates, fn($a, $b) => ($a['total_price'] ?? INF) <=> ($b['total_price'] ?? INF));
 
-        $best = $allCandidates[0];
+        $best         = $allCandidates[0];
         $alternatives = array_slice($allCandidates, 1, 5);
 
         $recommendations = $this->buildRecommendations($best, $alternatives, 0.03);
 
         return [
-            'best' => $best,
-            'alternatives' => $alternatives,
+            'best'            => $best,
+            'alternatives'    => $alternatives,
             'recommendations' => $recommendations,
         ];
     }

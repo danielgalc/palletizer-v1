@@ -5,8 +5,7 @@ const sections = [
     {
         group: "Geografía",
         items: [
-            { href: "/admin/countries", label: "Países y Zonas",   description: "Gestiona países, zonas de envío y su configuración." },
-            { href: "/admin/provinces", label: "Provincias",        description: "Provincias de España y su zona asignada." },
+            { href: "/admin/countries", label: "Geografía", description: "Gestiona países, zonas de envío y provincias desde un solo lugar." },
         ],
     },
     {

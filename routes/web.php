@@ -46,7 +46,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // Dashboard
     Route::get('/', fn() => inertia('Admin/Dashboard'))->name('dashboard');
 
-    // Países y Zonas
+    // Geografía (Países, Zonas y Provincias fusionados)
     Route::get('/countries',                  [CountryController::class, 'index'])->name('countries.index');
     Route::post('/countries',                 [CountryController::class, 'storeCountry'])->name('countries.store');
     Route::put('/countries/{id}',             [CountryController::class, 'updateCountry'])->name('countries.update');
@@ -55,8 +55,8 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::put('/zones/{id}',                 [CountryController::class, 'updateZone'])->name('zones.update');
     Route::delete('/zones/{id}',              [CountryController::class, 'destroyZone'])->name('zones.destroy');
 
-    // Provincias
-    Route::get('/provinces',        [ProvinceController::class, 'index'])->name('provinces.index');
+    // Provincias (GET redirige al panel fusionado de Geografía)
+    Route::get('/provinces',        fn() => redirect('/admin/countries'))->name('provinces.index');
     Route::post('/provinces',       [ProvinceController::class, 'store'])->name('provinces.store');
     Route::put('/provinces/{id}',   [ProvinceController::class, 'update'])->name('provinces.update');
     Route::delete('/provinces/{id}',[ProvinceController::class, 'destroy'])->name('provinces.destroy');

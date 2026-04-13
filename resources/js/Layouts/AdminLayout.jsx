@@ -66,8 +66,7 @@ const NAV = [
     {
         group: "Geografía",
         items: [
-            { href: "/admin/countries", label: "Países y Zonas",  icon: Icon.globe },
-            { href: "/admin/provinces", label: "Provincias",      icon: Icon.map   },
+            { href: "/admin/countries", label: "Geografía", icon: Icon.globe },
         ],
     },
     {

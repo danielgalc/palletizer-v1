@@ -49,7 +49,7 @@ class RateController extends Controller
             ->orderBy('c.name')
             ->orderByRaw("CAST(NULLIF(REGEXP_REPLACE(z.name, '[^0-9]', '', 'g'), '') AS INTEGER) NULLS LAST")
             ->orderBy('z.name')
-            ->select('z.id', 'z.name', 'c.name as country_name')
+            ->select('z.id', 'z.name', 'z.carrier_id', 'c.name as country_name')
             ->get();
 
         $palletTypes = DB::table('pallet_types')->orderBy('name')->get();

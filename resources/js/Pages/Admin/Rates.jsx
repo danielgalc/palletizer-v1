@@ -19,6 +19,12 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
     const [localCarrier, setLocalCarrier] = useState(filters?.carrier_id ?? "");
     const [localZone, setLocalZone]       = useState(filters?.zone_id ?? "");
 
+    // Zonas filtradas por el transportista seleccionado en el modal
+    const zonesForModal = useMemo(() => {
+        if (!data.carrier_id) return zones;
+        return zones.filter((z) => String(z.carrier_id) === String(data.carrier_id));
+    }, [zones, data.carrier_id]);
+
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
 
     const applyFilters = (patch) => {
@@ -176,7 +182,7 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                         <Field label="Zona" error={errors.zone_id} required>
                             <Select value={data.zone_id} onChange={(e) => setData("zone_id", e.target.value)}>
                                 <option value="">Selecciona…</option>
-                                {zones.map((z) => <option key={z.id} value={z.id}>{z.country_name} — {z.name}</option>)}
+                                {zonesForModal.map((z) => <option key={z.id} value={z.id}>{z.country_name} — {z.name}</option>)}
                             </Select>
                         </Field>
                     </div>

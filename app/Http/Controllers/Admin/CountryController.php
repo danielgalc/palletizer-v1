@@ -11,18 +11,18 @@ class CountryController extends Controller
 {
     public function index()
     {
-        $countries = DB::table('countries')
-            ->orderBy('name')
-            ->get();
+        $countries     = DB::table('countries')->orderBy('name')->get();
+        $carriers      = DB::table('carriers')->where('is_active', true)->orderBy('name')->get();
+        $zones         = DB::table('zones')->orderBy('carrier_id')->orderBy('country_id')->orderByRaw('LENGTH(name)')->orderBy('name')->get();
+        $provinces     = DB::table('provinces')->orderBy('name')->get();
+        $provinceZones = DB::table('province_zones')->get();
 
-        $zones = DB::table('zones')
-            ->orderBy('country_id')
-            ->orderBy('name')
-            ->get();
-
-        return Inertia::render('Admin/Countries', [
-            'countries' => $countries,
-            'zones'     => $zones,
+        return Inertia::render('Admin/Geography', [
+            'countries'     => $countries,
+            'carriers'      => $carriers,
+            'zones'         => $zones,
+            'provinces'     => $provinces,
+            'provinceZones' => $provinceZones,
         ]);
     }
 
@@ -36,7 +36,7 @@ class CountryController extends Controller
         ]);
 
         $data['code'] = strtoupper($data['code']);
-        $id = DB::table('countries')->insertGetId([...$data, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('countries')->insert([...$data, 'created_at' => now(), 'updated_at' => now()]);
 
         return back()->with('success', "País {$data['name']} creado.");
     }
@@ -71,16 +71,18 @@ class CountryController extends Controller
     {
         $data = $request->validate([
             'country_id' => ['required', 'integer', 'exists:countries,id'],
+            'carrier_id' => ['required', 'integer', 'exists:carriers,id'],
             'name'       => ['required', 'string', 'max:100'],
         ]);
 
         $exists = DB::table('zones')
             ->where('country_id', $data['country_id'])
+            ->where('carrier_id', $data['carrier_id'])
             ->where('name', $data['name'])
             ->exists();
 
         if ($exists) {
-            return back()->withErrors(['name' => 'Ya existe una zona con ese nombre en este país.']);
+            return back()->withErrors(['name' => 'Ya existe una zona con ese nombre para este transportista en este país.']);
         }
 
         DB::table('zones')->insert([...$data, 'created_at' => now(), 'updated_at' => now()]);
@@ -91,6 +93,7 @@ class CountryController extends Controller
     {
         $data = $request->validate([
             'country_id' => ['required', 'integer', 'exists:countries,id'],
+            'carrier_id' => ['required', 'integer', 'exists:carriers,id'],
             'name'       => ['required', 'string', 'max:100'],
         ]);
 
@@ -100,7 +103,7 @@ class CountryController extends Controller
 
     public function destroyZone(int $id)
     {
-        $hasProvinces = DB::table('provinces')->where('zone_id', $id)->exists();
+        $hasProvinces = DB::table('province_zones')->where('zone_id', $id)->exists();
         $hasRates     = DB::table('rates')->where('zone_id', $id)->exists();
 
         if ($hasProvinces || $hasRates) {

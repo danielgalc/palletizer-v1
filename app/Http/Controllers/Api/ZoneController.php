@@ -12,14 +12,25 @@ class ZoneController extends Controller
     {
         $countryCode = $request->query('country_code');
 
-        $q = DB::table('zones')
-            ->join('countries', 'countries.id', '=', 'zones.country_id')
-            ->select('zones.id', 'zones.name', 'countries.code as country_code');
+        $q = DB::table('zones as z')
+            ->join('countries as c', 'c.id', '=', 'z.country_id')
+            ->join('carriers as ca', 'ca.id', '=', 'z.carrier_id')
+            ->select(
+                'z.id',
+                'z.name',
+                'z.carrier_id',
+                'ca.name as carrier_name',
+                'c.code as country_code'
+            );
 
         if ($countryCode) {
-            $q->where('countries.code', strtoupper($countryCode));
+            $q->where('c.code', strtoupper($countryCode));
         }
 
-        return $q->orderBy('zones.name')->get();
+        return $q
+            ->orderBy('ca.name')
+            ->orderByRaw('LENGTH(z.name)')
+            ->orderBy('z.name')
+            ->get();
     }
 }

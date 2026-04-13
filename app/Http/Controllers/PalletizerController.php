@@ -79,8 +79,7 @@ class PalletizerController extends Controller
             if (!$province) {
                 return back()->withErrors(['province_id' => 'Provincia no encontrada.']);
             }
-            $zoneId = (int) $province->zone_id;
-            $destinationLabel = $province->name; // para pintar en UI
+            $destinationLabel = $province->name;
         } else {
             $zoneId = (int) $data['zone_id'];
             $zone = DB::table('zones')->where('id', $zoneId)->first();
@@ -213,9 +212,10 @@ class PalletizerController extends Controller
         $carrierIds = ($data['carrier_mode'] === 'manual') ? $data['carrier_ids'] : null;
 
         $plan = $svc->calculateBestPlanAcrossCarriers(
-            $zoneId,
             $items,
-            null, // Siempre prueba todos los tipos de pallet disponibles
+            $isES ? (int) $data['province_id'] : null,  // provincia para España
+            $isES ? null : (int) $data['zone_id'],       // zona directa para otros países
+            null,
             $allowSeparators,
             $carrierIds
         );
@@ -223,10 +223,11 @@ class PalletizerController extends Controller
         return Inertia::render('Palletizer/Index', [
             'result' => [
                 'country_code' => $data['country_code'],
-                'destination' => $destinationLabel,
-                'zone_id' => $zoneId,
-                'items' => $items,
-                'plan' => $plan,
+                'destination'  => $destinationLabel,
+                'province_id'  => $isES ? (int) $data['province_id'] : null,
+                'zone_id'      => $isES ? null : (int) $data['zone_id'],
+                'items'        => $items,
+                'plan'         => $plan,
             ],
         ]);
     }

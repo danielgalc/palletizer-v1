@@ -9,66 +9,106 @@ use Inertia\Inertia;
 
 class ProvinceController extends Controller
 {
-    public function index(Request $request)
-    {
-        $query = DB::table('provinces as p')
-            ->join('zones as z', 'z.id', '=', 'p.zone_id')
-            ->join('countries as c', 'c.id', '=', 'z.country_id')
-            ->orderBy('c.name')
-            ->orderBy('z.name')
-            ->orderBy('p.name')
-            ->select('p.id', 'p.name', 'p.zone_id', 'z.name as zone_name', 'c.name as country_name');
-
-        if ($request->filled('search')) {
-            $search = '%' . $request->search . '%';
-            $query->where(function ($q) use ($search) {
-                $q->where('p.name', 'like', $search)
-                  ->orWhere('z.name', 'like', $search)
-                  ->orWhere('c.name', 'like', $search);
-            });
-        }
-
-        $provinces = $query->paginate(25)->withQueryString();
-
-        $zones = DB::table('zones as z')
-            ->join('countries as c', 'c.id', '=', 'z.country_id')
-            ->orderBy('c.name')
-            ->orderBy('z.name')
-            ->select('z.id', 'z.name', 'c.name as country_name')
-            ->get();
-
-        return Inertia::render('Admin/Provinces', [
-            'provinces' => $provinces,
-            'zones'     => $zones,
-            'filters'   => $request->only(['search']),
-        ]);
-    }
-
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name'    => ['required', 'string', 'max:100', 'unique:provinces,name'],
+            'name'    => ['required', 'string', 'max:100'],
             'zone_id' => ['required', 'integer', 'exists:zones,id'],
         ]);
 
-        DB::table('provinces')->insert([...$data, 'created_at' => now(), 'updated_at' => now()]);
-        return back()->with('success', "Provincia {$data['name']} creada.");
+        // La provincia puede ya existir (otro carrier la tiene en una zona distinta).
+        // En ese caso reutilizamos el registro; solo creamos un nuevo province_zones.
+        $province = DB::table('provinces')->where('name', $data['name'])->first();
+
+        if ($province) {
+            $provinceId = $province->id;
+
+            // ¿Ya está asignada exactamente a esta zona?
+            $alreadyInZone = DB::table('province_zones')
+                ->where('province_id', $provinceId)
+                ->where('zone_id', $data['zone_id'])
+                ->exists();
+
+            if ($alreadyInZone) {
+                return back()->withErrors(['name' => 'Esta provincia ya está asignada a esa zona.']);
+            }
+
+            // ¿Ya está en otra zona del MISMO carrier? (una provincia = una zona por carrier)
+            $zone        = DB::table('zones')->where('id', $data['zone_id'])->first();
+            $carrierZoneIds = DB::table('zones')->where('carrier_id', $zone->carrier_id)->pluck('id');
+            $conflict    = DB::table('province_zones')
+                ->where('province_id', $provinceId)
+                ->whereIn('zone_id', $carrierZoneIds)
+                ->first();
+
+            if ($conflict) {
+                $conflictZone = DB::table('zones')->where('id', $conflict->zone_id)->first();
+                return back()->withErrors(['name' => "Ya está asignada a {$conflictZone->name} de este transportista."]);
+            }
+        } else {
+            $provinceId = DB::table('provinces')->insertGetId([
+                'name'       => $data['name'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('province_zones')->insert([
+            'province_id' => $provinceId,
+            'zone_id'     => $data['zone_id'],
+            'created_at'  => now(),
+            'updated_at'  => now(),
+        ]);
+
+        return back()->with('success', "Provincia {$data['name']} asignada.");
     }
 
     public function update(Request $request, int $id)
     {
         $data = $request->validate([
-            'name'    => ['required', 'string', 'max:100', "unique:provinces,name,{$id}"],
-            'zone_id' => ['required', 'integer', 'exists:zones,id'],
+            'name'         => ['required', 'string', 'max:100', "unique:provinces,name,{$id}"],
+            'zone_id'      => ['required', 'integer', 'exists:zones,id'],
+            'old_zone_id'  => ['required', 'integer', 'exists:zones,id'],
         ]);
 
-        DB::table('provinces')->where('id', $id)->update([...$data, 'updated_at' => now()]);
+        DB::table('provinces')->where('id', $id)->update([
+            'name'       => $data['name'],
+            'updated_at' => now(),
+        ]);
+
+        // Actualizar la asignación de zona para este carrier concreto
+        DB::table('province_zones')
+            ->where('province_id', $id)
+            ->where('zone_id', $data['old_zone_id'])
+            ->update([
+                'zone_id'    => $data['zone_id'],
+                'updated_at' => now(),
+            ]);
+
         return back()->with('success', 'Provincia actualizada.');
     }
 
-    public function destroy(int $id)
+    public function destroy(Request $request, int $id)
     {
-        DB::table('provinces')->where('id', $id)->delete();
+        $zoneId = $request->input('zone_id');
+
+        if ($zoneId) {
+            // Eliminar solo la asignación concreta a esta zona
+            DB::table('province_zones')
+                ->where('province_id', $id)
+                ->where('zone_id', $zoneId)
+                ->delete();
+
+            // Si la provincia ya no tiene ninguna zona asignada, eliminarla también
+            $remaining = DB::table('province_zones')->where('province_id', $id)->count();
+            if ($remaining === 0) {
+                DB::table('provinces')->where('id', $id)->delete();
+            }
+        } else {
+            // Sin contexto de zona: eliminar la provincia y todas sus asignaciones (CASCADE)
+            DB::table('provinces')->where('id', $id)->delete();
+        }
+
         return back()->with('success', 'Provincia eliminada.');
     }
 }
