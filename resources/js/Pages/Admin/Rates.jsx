@@ -3,7 +3,7 @@ import { useForm, router } from "@inertiajs/react";
 import AdminLayout from "@/Layouts/AdminLayout";
 import {
     Btn, ActionBtn, Field, Input, Select, Modal, ConfirmDialog,
-    Table, Tr, Td, PageHeader, Pagination,
+    Table, Tr, Td, PageHeader,
 } from "@/Components/Admin/Ui";
 
 const EMPTY = {
@@ -11,6 +11,8 @@ const EMPTY = {
     min_pallets: "1", max_pallets: "99",
     price_eur: "", carrier_rate_name: "",
 };
+
+const PAGE_SIZE = 8;
 
 export default function Rates({ rates, carriers, zones, palletTypes, filters }) {
     const [modalOpen, setModalOpen]       = useState(false);
@@ -43,15 +45,6 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
         }, { preserveState: true, preserveScroll: true, replace: true });
     };
 
-    const goToPage = (page) => {
-        router.get("/admin/rates", {
-            carrier_id:     localCarrier     || undefined,
-            zone_id:        localZone        || undefined,
-            pallet_type_id: localPalletType  || undefined,
-            page,
-        }, { preserveState: true, preserveScroll: true });
-    };
-
     const openCreate = () => { reset(); clearErrors(); setEditing(null); setModalOpen(true); };
     const openEdit   = (r) => {
         clearErrors();
@@ -72,19 +65,44 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
             : post("/admin/rates", opts);
     };
 
-    // Agrupar por transportista para cabeceras visuales
-    const grouped = useMemo(() => {
-        const groups = [];
-        let lastCarrier = null;
-        for (const r of rates.data) {
-            if (r.carrier_name !== lastCarrier) {
-                groups.push({ type: "header", name: r.carrier_name, key: `h-${r.carrier_id}-${r.carrier_name}` });
-                lastCarrier = r.carrier_name;
+    // Agrupar tarifas por transportista
+    const carrierGroups = useMemo(() => {
+        const map = new Map();
+        for (const r of rates) {
+            if (!map.has(r.carrier_id)) {
+                map.set(r.carrier_id, { id: r.carrier_id, name: r.carrier_name, rates: [] });
             }
-            groups.push({ type: "row", data: r, key: r.id });
+            map.get(r.carrier_id).rates.push(r);
         }
-        return groups;
-    }, [rates.data]);
+        return Array.from(map.values());
+    }, [rates]);
+
+    // Búsqueda por nombre de transportista (cliente)
+    const [carrierSearch, setCarrierSearch] = useState("");
+    const visibleGroups = useMemo(() => {
+        const q = carrierSearch.trim().toLowerCase();
+        if (!q) return carrierGroups;
+        return carrierGroups.filter((g) => g.name.toLowerCase().includes(q));
+    }, [carrierGroups, carrierSearch]);
+
+    // Expandir/colapsar secciones (todas abiertas por defecto)
+    const [expanded, setExpanded] = useState(() => {
+        const init = {};
+        for (const r of rates) init[r.carrier_id] = true;
+        return init;
+    });
+    const toggle = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
+    const allExpanded = visibleGroups.length > 0 && visibleGroups.every((g) => !!expanded[g.id]);
+    const toggleAll = () => {
+        const next = { ...expanded };
+        visibleGroups.forEach((g) => (next[g.id] = !allExpanded));
+        setExpanded(next);
+    };
+
+    // Paginación individual por transportista
+    const [carrierPages, setCarrierPages] = useState({});
+    const getPage = (id) => carrierPages[id] ?? 1;
+    const setPage = (id, page) => setCarrierPages((p) => ({ ...p, [id]: page }));
 
     return (
         <AdminLayout title="Tarifas">
@@ -96,13 +114,25 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
 
             {/* Filtros */}
             <div className="mb-4 flex flex-wrap items-center gap-3">
+                <div className="relative w-52">
+                    <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-ink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                    </svg>
+                    <input
+                        type="text"
+                        value={carrierSearch}
+                        onChange={(e) => setCarrierSearch(e.target.value)}
+                        placeholder="Buscar transportista…"
+                        className="w-full rounded-lg border border-ink-200 bg-white py-2 pl-8 pr-3 text-sm text-ink-700 placeholder-ink-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                    />
+                </div>
+
                 <div className="w-52">
                     <Select
                         value={localCarrier}
                         onChange={(e) => {
                             const carrier = e.target.value;
                             setLocalCarrier(carrier);
-                            // Reset zone if it no longer belongs to this carrier
                             const zoneStillValid = !carrier || zones.some(
                                 (z) => String(z.id) === String(localZone) && String(z.carrier_id) === carrier
                             );
@@ -157,51 +187,133 @@ export default function Rates({ rates, carriers, zones, palletTypes, filters }) 
                     </Btn>
                 )}
 
-                <span className="ml-auto self-center text-sm text-ink-500">
-                    {rates.total} tarifa{rates.total !== 1 ? "s" : ""}
-                </span>
+                <div className="ml-auto flex items-center gap-3">
+                    {carrierGroups.length > 1 && (
+                        <button
+                            type="button"
+                            onClick={toggleAll}
+                            className="flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-ink-800 transition-colors"
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                {allExpanded
+                                    ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                                    : <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                }
+                            </svg>
+                            {allExpanded ? "Colapsar todo" : "Expandir todo"}
+                        </button>
+                    )}
+                    <span className="text-sm text-ink-500">
+                        {rates.length} tarifa{rates.length !== 1 ? "s" : ""}
+                    </span>
+                </div>
             </div>
 
             <Table headers={["Zona", "País", "Tipo pallet", "Pallets (tramo)", "Nombre tarifa", "€", "Acciones"]}>
-                {grouped.map((item) => {
-                    if (item.type === "header") {
-                        return (
-                            <Tr key={item.key} className="bg-ink-900">
-                                <Td colSpan={7}>
-                                    <span className="text-xs font-extrabold uppercase tracking-wide text-white">
-                                        {item.name}
-                                    </span>
+                {visibleGroups.map((group) => {
+                    const isOpen     = !!expanded[group.id];
+                    const page       = getPage(group.id);
+                    const totalPages = Math.ceil(group.rates.length / PAGE_SIZE);
+                    const pagedRates = group.rates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+                    return (
+                        <React.Fragment key={group.id}>
+                            {/* Fila del transportista */}
+                            <Tr className="bg-ink-900 hover:bg-ink-800 cursor-pointer" >
+                                <Td colSpan={7} className="py-2.5">
+                                    <div
+                                        className="flex items-center justify-between"
+                                        onClick={() => toggle(group.id)}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-sm font-extrabold uppercase tracking-wide text-white">
+                                                {group.name}
+                                            </span>
+                                            <span className="text-xs font-semibold text-ink-400 bg-ink-700 rounded-full px-2 py-0.5">
+                                                {group.rates.length} tarifa{group.rates.length !== 1 ? "s" : ""}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-400">
+                                            {isOpen ? "Colapsar" : "Expandir"}
+                                            <svg
+                                                className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                                                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </div>
+                                    </div>
                                 </Td>
                             </Tr>
-                        );
-                    }
-                    const r = item.data;
-                    return (
-                        <Tr key={item.key}>
-                            <Td className="font-semibold">{r.zone_name}</Td>
-                            <Td className="text-ink-500">{r.country_name}</Td>
-                            <Td>{r.pallet_type_name}</Td>
-                            <Td>
-                                <span className="tabular-nums text-xs font-semibold text-ink-600 bg-ink-50 rounded-md px-2 py-0.5 ring-1 ring-ink-100">
-                                    {r.min_pallets === r.max_pallets
-                                        ? `${r.min_pallets} unidad${r.min_pallets !== 1 ? "es" : ""}`
-                                        : `${r.min_pallets}–${r.max_pallets} uds.`}
-                                </span>
-                            </Td>
-                            <Td className="text-ink-500 text-xs">{r.carrier_rate_name || <span className="text-ink-300">—</span>}</Td>
-                            <Td className="font-extrabold tabular-nums">{Number(r.price_eur).toFixed(2)} €</Td>
-                            <Td right>
-                                <div className="flex justify-end gap-2">
-                                    <ActionBtn type="edit" onClick={() => openEdit(r)} />
-                                    <ActionBtn type="delete" onClick={() => setDeleteTarget(r)} />
-                                </div>
-                            </Td>
-                        </Tr>
+
+                            {/* Filas de tarifas */}
+                            {isOpen && pagedRates.map((r) => (
+                                <Tr key={r.id} className="bg-ink-50/60">
+                                    <Td className="font-semibold">{r.zone_name}</Td>
+                                    <Td className="text-ink-500">{r.country_name}</Td>
+                                    <Td>{r.pallet_type_name}</Td>
+                                    <Td>
+                                        <span className="tabular-nums text-xs font-semibold text-ink-600 bg-white rounded-md px-2 py-0.5 ring-1 ring-ink-100">
+                                            {r.min_pallets === r.max_pallets
+                                                ? `${r.min_pallets} unidad${r.min_pallets !== 1 ? "es" : ""}`
+                                                : `${r.min_pallets}–${r.max_pallets} uds.`}
+                                        </span>
+                                    </Td>
+                                    <Td className="text-ink-500 text-xs">{r.carrier_rate_name || <span className="text-ink-300">—</span>}</Td>
+                                    <Td className="font-extrabold tabular-nums">{Number(r.price_eur).toFixed(2)} €</Td>
+                                    <Td right>
+                                        <div className="flex justify-end gap-2">
+                                            <ActionBtn type="edit" onClick={() => openEdit(r)} />
+                                            <ActionBtn type="delete" onClick={() => setDeleteTarget(r)} />
+                                        </div>
+                                    </Td>
+                                </Tr>
+                            ))}
+
+                            {/* Paginación por transportista */}
+                            {isOpen && totalPages > 1 && (
+                                <Tr className="bg-ink-50/40">
+                                    <Td colSpan={7} className="py-1.5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs text-ink-400">
+                                                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, group.rates.length)} de {group.rates.length}
+                                            </span>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPage(group.id, page - 1)}
+                                                    disabled={page === 1}
+                                                    className="rounded px-2 py-0.5 text-xs font-semibold text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                                >
+                                                    ← Anterior
+                                                </button>
+                                                <span className="text-xs text-ink-400 px-1">{page} / {totalPages}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPage(group.id, page + 1)}
+                                                    disabled={page === totalPages}
+                                                    className="rounded px-2 py-0.5 text-xs font-semibold text-ink-500 hover:bg-ink-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                                >
+                                                    Siguiente →
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </Td>
+                                </Tr>
+                            )}
+
+                            {/* Estado vacío */}
+                            {isOpen && group.rates.length === 0 && (
+                                <Tr className="bg-ink-50/60">
+                                    <Td colSpan={7} className="text-center text-xs text-ink-400 py-4">
+                                        Sin tarifas para este transportista.
+                                    </Td>
+                                </Tr>
+                            )}
+                        </React.Fragment>
                     );
                 })}
             </Table>
-
-            <Pagination pagination={rates} onPageChange={goToPage} />
 
             <Modal open={modalOpen} title={editing ? "Editar tarifa" : "Nueva tarifa"} onClose={closeModal} size="lg">
                 <form onSubmit={submit} className="space-y-4">

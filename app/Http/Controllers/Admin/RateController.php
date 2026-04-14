@@ -41,8 +41,7 @@ class RateController extends Controller
             ->orderBy('z.name')
             ->orderBy('pt.name')
             ->orderBy('r.min_pallets')
-            ->paginate(10)
-            ->withQueryString();
+            ->get();
 
         $carriers = DB::table('carriers')->orderBy('name')->get();
 
