@@ -11,6 +11,40 @@ const EMPTY = {
     box_type_id: "", weight_kg: "", is_active: true,
 };
 
+const BRAND_LOGOS = {
+    "hp":     "/logos/HP_Logo.png",
+    "dell":   "/logos/Dell_Logo.png",
+    "lenovo": "/logos/Lenovo_Logo.png",
+};
+
+function BrandLogo({ brand }) {
+    if (!brand) return <span className="text-ink-400">—</span>;
+
+    const logo = BRAND_LOGOS[brand.toLowerCase()];
+
+    if (!logo) {
+        const initials = brand.slice(0, 2).toUpperCase();
+        return (
+            <div className="flex items-center gap-2">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-ink-100 text-[10px] font-bold text-ink-500">
+                    {initials}
+                </span>
+                <span className="text-sm font-semibold text-ink-700">{brand}</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex items-center gap-2">
+            <img
+                src={logo}
+                alt={brand}
+                className="h-7 w-auto max-w-[64px] object-contain"
+            />
+        </div>
+    );
+}
+
 function useDebounce(fn, delay = 400) {
     const timer = React.useRef(null);
     return useCallback((...args) => {
@@ -144,7 +178,7 @@ export default function DeviceModels({ models, boxTypes, brands, filters }) {
             <Table headers={["Marca", "Modelo", "SKU", "Tipo caja", "Peso (kg)", "Estado", "Acciones"]}>
                 {models.data.map((m) => (
                     <Tr key={m.id}>
-                        <Td className="font-semibold">{m.brand || <span className="text-ink-400">—</span>}</Td>
+                        <Td><BrandLogo brand={m.brand} /></Td>
                         <Td>{m.name}</Td>
                         <Td>
                             {m.sku
