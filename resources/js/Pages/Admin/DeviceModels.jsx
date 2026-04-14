@@ -19,37 +19,44 @@ function useDebounce(fn, delay = 400) {
     }, [fn]);
 }
 
-export default function DeviceModels({ models, boxTypes, filters }) {
+export default function DeviceModels({ models, boxTypes, brands, filters }) {
     const [modalOpen, setModalOpen]       = useState(false);
     const [editing, setEditing]           = useState(null);
     const [deleteTarget, setDeleteTarget] = useState(null);
     const [search, setSearch]             = useState(filters?.search ?? "");
     const [filterBox, setFilterBox]       = useState(filters?.box_type_id ?? "");
     const [filterActive, setFilterActive] = useState(filters?.is_active ?? "");
+    const [filterBrand, setFilterBrand]   = useState(filters?.brand ?? "");
 
     const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm(EMPTY);
 
-    const doSearch = useDebounce((value, box, active) => {
+    const doSearch = useDebounce((value, box, active, brand) => {
         router.get("/admin/device-models", {
             search:      value  || undefined,
             box_type_id: box    || undefined,
             is_active:   active !== "" ? active : undefined,
+            brand:       brand  || undefined,
         }, { preserveState: true, preserveScroll: true, replace: true });
     });
 
     const handleSearch = (e) => {
         setSearch(e.target.value);
-        doSearch(e.target.value, filterBox, filterActive);
+        doSearch(e.target.value, filterBox, filterActive, filterBrand);
     };
 
     const handleBoxFilter = (e) => {
         setFilterBox(e.target.value);
-        doSearch(search, e.target.value, filterActive);
+        doSearch(search, e.target.value, filterActive, filterBrand);
     };
 
     const handleActiveFilter = (e) => {
         setFilterActive(e.target.value);
-        doSearch(search, filterBox, e.target.value);
+        doSearch(search, filterBox, e.target.value, filterBrand);
+    };
+
+    const handleBrandFilter = (e) => {
+        setFilterBrand(e.target.value);
+        doSearch(search, filterBox, filterActive, e.target.value);
     };
 
     const goToPage = (page) => {
@@ -57,6 +64,7 @@ export default function DeviceModels({ models, boxTypes, filters }) {
             search:      search        || undefined,
             box_type_id: filterBox     || undefined,
             is_active:   filterActive !== "" ? filterActive : undefined,
+            brand:       filterBrand   || undefined,
             page,
         }, { preserveState: true, preserveScroll: true });
     };
@@ -81,10 +89,6 @@ export default function DeviceModels({ models, boxTypes, filters }) {
             : post("/admin/device-models", opts);
     };
 
-    const brands = useMemo(() => {
-        const set = new Set(models.data.map((m) => m.brand).filter(Boolean));
-        return Array.from(set).sort();
-    }, [models.data]);
 
     return (
         <AdminLayout title="Modelos de dispositivo">
@@ -101,6 +105,14 @@ export default function DeviceModels({ models, boxTypes, filters }) {
                     placeholder="Buscar por marca, modelo o SKU…"
                     className="max-w-xs"
                 />
+                <div className="w-44">
+                    <Select value={filterBrand} onChange={handleBrandFilter}>
+                        <option value="">Todas las marcas</option>
+                        {brands.map((b) => (
+                            <option key={b} value={b}>{b}</option>
+                        ))}
+                    </Select>
+                </div>
                 <div className="w-48">
                     <Select value={filterBox} onChange={handleBoxFilter}>
                         <option value="">Todos los tipos de caja</option>
@@ -116,9 +128,9 @@ export default function DeviceModels({ models, boxTypes, filters }) {
                         <option value="0">Inactivos</option>
                     </Select>
                 </div>
-                {(search || filterBox || filterActive !== "") && (
+                {(search || filterBrand || filterBox || filterActive !== "") && (
                     <Btn variant="secondary" size="sm" onClick={() => {
-                        setSearch(""); setFilterBox(""); setFilterActive("");
+                        setSearch(""); setFilterBrand(""); setFilterBox(""); setFilterActive("");
                         router.get("/admin/device-models", {}, { preserveState: true, replace: true });
                     }}>
                         Limpiar filtros
