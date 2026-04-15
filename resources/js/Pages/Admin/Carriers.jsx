@@ -150,7 +150,7 @@ export default function Carriers({ carriers }) {
             <ConfirmDialog
                 open={!!deleteTarget}
                 title="¿Eliminar transportista?"
-                message={`Se eliminará "${deleteTarget?.name}". Si tiene tarifas asociadas no se podrá borrar.`}
+                message={`Se eliminará "${deleteTarget?.name}" junto con todas sus zonas y tarifas asociadas.`}
                 onConfirm={confirmDelete}
                 onCancel={() => setDeleteTarget(null)}
                 loading={processing}

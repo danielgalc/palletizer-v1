@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -77,7 +78,14 @@ class RateController extends Controller
             'carrier_rate_name' => ['nullable', 'string', 'max:150'],
         ]);
 
-        DB::table('rates')->insert([...$data, 'created_at' => now(), 'updated_at' => now()]);
+        try {
+            DB::table('rates')->insert([...$data, 'created_at' => now(), 'updated_at' => now()]);
+        } catch (UniqueConstraintViolationException) {
+            return back()->withErrors([
+                'min_pallets' => 'Ya existe una tarifa para esa combinación de transportista, zona, tipo de pallet y rango de pallets.',
+            ]);
+        }
+
         return back()->with('success', 'Tarifa creada.');
     }
 
@@ -93,7 +101,14 @@ class RateController extends Controller
             'carrier_rate_name' => ['nullable', 'string', 'max:150'],
         ]);
 
-        DB::table('rates')->where('id', $id)->update([...$data, 'updated_at' => now()]);
+        try {
+            DB::table('rates')->where('id', $id)->update([...$data, 'updated_at' => now()]);
+        } catch (UniqueConstraintViolationException) {
+            return back()->withErrors([
+                'min_pallets' => 'Ya existe otra tarifa con esa combinación de transportista, zona, tipo de pallet y rango de pallets.',
+            ]);
+        }
+
         return back()->with('success', 'Tarifa actualizada.');
     }
 

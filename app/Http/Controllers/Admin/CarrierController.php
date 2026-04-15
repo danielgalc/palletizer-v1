@@ -57,12 +57,18 @@ class CarrierController extends Controller
 
     public function destroy(int $id)
     {
-        $hasRates = DB::table('rates')->where('carrier_id', $id)->exists();
-        if ($hasRates) {
-            return back()->withErrors(['delete' => 'No se puede eliminar: tiene tarifas asociadas.']);
-        }
+        DB::transaction(function () use ($id) {
+            $zoneIds = DB::table('zones')->where('carrier_id', $id)->pluck('id');
 
-        DB::table('carriers')->where('id', $id)->delete();
+            if ($zoneIds->isNotEmpty()) {
+                DB::table('province_zones')->whereIn('zone_id', $zoneIds)->delete();
+                DB::table('rates')->whereIn('zone_id', $zoneIds)->delete();
+                DB::table('zones')->whereIn('id', $zoneIds)->delete();
+            }
+
+            DB::table('carriers')->where('id', $id)->delete();
+        });
+
         return back()->with('success', 'Transportista eliminado.');
     }
 }
