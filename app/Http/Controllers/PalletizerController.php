@@ -77,7 +77,7 @@ class PalletizerController extends Controller
         if ($isES) {
             $province = DB::table('provinces')->where('id', $data['province_id'])->first();
             if (!$province) {
-                return back()->withErrors(['province_id' => 'Provincia no encontrada.']);
+                return back()->withErrors(['province_id' => 'Destino no encontrado.']);
             }
             $destinationLabel = $province->name;
         } else {

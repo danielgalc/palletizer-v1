@@ -5,7 +5,7 @@ const sections = [
     {
         group: "Geografía",
         items: [
-            { href: "/admin/countries", label: "Geografía", description: "Gestiona países, zonas de envío y provincias desde un solo lugar." },
+            { href: "/admin/countries", label: "Geografía", description: "Gestiona países, zonas de envío y destinos desde un solo lugar." },
         ],
     },
     {

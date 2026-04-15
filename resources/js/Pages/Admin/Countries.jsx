@@ -212,7 +212,7 @@ export default function Countries({ countries, zones }) {
             <ConfirmDialog
                 open={!!deleteZone}
                 title="¿Eliminar zona?"
-                message={`Se eliminará "${deleteZone?.name}". Solo es posible si no tiene provincias ni tarifas.`}
+                message={`Se eliminará "${deleteZone?.name}". Solo es posible si no tiene destinos ni tarifas.`}
                 onConfirm={() => zoneForm.delete(`/admin/zones/${deleteZone.id}`, {
                     preserveScroll: true, onSuccess: () => setDeleteZone(null),
                 })}

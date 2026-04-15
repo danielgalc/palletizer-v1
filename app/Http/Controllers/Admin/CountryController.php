@@ -107,7 +107,7 @@ class CountryController extends Controller
         $hasRates     = DB::table('rates')->where('zone_id', $id)->exists();
 
         if ($hasProvinces || $hasRates) {
-            return back()->withErrors(['delete' => 'No se puede eliminar: tiene provincias o tarifas asociadas.']);
+            return back()->withErrors(['delete' => 'No se puede eliminar: tiene destinos o tarifas asociadas.']);
         }
 
         DB::table('zones')->where('id', $id)->delete();

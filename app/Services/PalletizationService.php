@@ -561,7 +561,8 @@ class PalletizationService
                 $palletL, $palletW, $boxLen, $boxWid
             );
 
-            $unitKg = (float)($weightByCode[$code] ?? $b->weight_kg);
+            // Peso equipo + cartón de la caja
+            $unitKg = (float)($weightByCode[$code] ?? 0) + (float)($b->carton_weight_kg ?? 0);
             $unitG  = (int) round($unitKg * 1000);
 
             $info[$code] = [

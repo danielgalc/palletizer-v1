@@ -26,7 +26,7 @@ class BoxTypeController extends Controller
             'length_cm'                         => ['required', 'integer', 'min:1'],
             'width_cm'                          => ['required', 'integer', 'min:1'],
             'height_cm'                         => ['required', 'integer', 'min:1'],
-            'weight_kg'                         => ['required', 'numeric', 'min:0'],
+            'carton_weight_kg'                  => ['required', 'numeric', 'min:0'],
             'security_separator_every_n_layers' => ['nullable', 'integer', 'min:1'],
         ]);
 
@@ -42,7 +42,7 @@ class BoxTypeController extends Controller
             'length_cm'                         => ['required', 'integer', 'min:1'],
             'width_cm'                          => ['required', 'integer', 'min:1'],
             'height_cm'                         => ['required', 'integer', 'min:1'],
-            'weight_kg'                         => ['required', 'numeric', 'min:0'],
+            'carton_weight_kg'                  => ['required', 'numeric', 'min:0'],
             'security_separator_every_n_layers' => ['nullable', 'integer', 'min:1'],
         ]);
 

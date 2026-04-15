@@ -113,7 +113,7 @@ export default function Info() {
                     <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-ink-500">
                         {[
                             "Países & Zonas",
-                            "Provincias",
+                            "Destinos",
                             "Transportistas",
                             "Tipos de pallet",
                             "Tarifas",
@@ -141,12 +141,12 @@ export default function Info() {
                 <Card>
                     <SectionHeading
                         number="1"
-                        title="Geografía — Países, zonas y provincias"
+                        title="Geografía — Países, zonas y destinos"
                         subtitle="Define dónde pueden enviarse los pallets y qué zonas tarifarias les aplican."
                     />
 
                     <p className="text-sm text-ink-500 mb-1">
-                        Accede desde <strong>Geografía</strong> en el menú lateral. Este panel integra países, zonas y provincias en una sola vista.
+                        Accede desde <strong>Geografía</strong> en el menú lateral. Este panel integra países, zonas y destinos en una sola vista.
                     </p>
 
                     <h3 className="mt-5 mb-1 text-xs font-extrabold uppercase tracking-widest text-ink-400">Países</h3>
@@ -164,12 +164,12 @@ export default function Info() {
                         <FieldRow label="Transportista">Cada zona pertenece a un único transportista. Si varios transportistas cubren el mismo destino, cada uno tiene su propia zona.</FieldRow>
                     </FieldTable>
 
-                    <h3 className="mt-5 mb-1 text-xs font-extrabold uppercase tracking-widest text-ink-400">Provincias (solo España)</h3>
+                    <h3 className="mt-5 mb-1 text-xs font-extrabold uppercase tracking-widest text-ink-400">Destinos (solo España)</h3>
                     <p className="text-sm text-ink-500">
-                        Las provincias españolas se asignan a zonas. Una provincia puede pertenecer a zonas de distintos transportistas (una zona por transportista).
+                        Los destinos españoles se asignan a zonas. Un destino puede pertenecer a zonas de distintos transportistas (una zona por transportista).
                     </p>
                     <Callout type="warning">
-                        Si una provincia no está asignada a ninguna zona de un transportista, ese transportista <strong>no aparecerá disponible</strong> al seleccionar esa provincia en el Palletizer.
+                        Si un destino no está asignado a ninguna zona de un transportista, ese transportista <strong>no aparecerá disponible</strong> al seleccionar ese destino en el Palletizer.
                     </Callout>
                 </Card>
 
@@ -366,7 +366,7 @@ export default function Info() {
                         <p>Cuando el operador lanza un cálculo, el sistema:</p>
                         <ol className="space-y-2 pl-1">
                             {[
-                                "Identifica el destino (provincia española → zona, o zona directa para otros países).",
+                                "Identifica el destino (destino español → zona, o zona directa para otros países).",
                                 "Busca todos los transportistas activos que tienen una tarifa para esa zona.",
                                 "Para cada transportista y cada tipo de pallet con tarifa, simula el paletizado completo con las dimensiones y pesos reales de las cajas.",
                                 "Calcula el coste total de transporte (pallets × precio) más el coste de embalaje (variantes en stock seleccionadas).",
@@ -379,7 +379,7 @@ export default function Info() {
                             ))}
                         </ol>
                         <Callout type="danger">
-                            Si faltan datos clave — zonas sin asignar a provincias, tipos de pallet sin tarifa, o variantes de caja sin stock — el resultado puede ser incorrecto o incompleto. Mantén los datos actualizados para obtener planes fiables.
+                            Si faltan datos clave — zonas sin destinos asignados, tipos de pallet sin tarifa, o variantes de caja sin stock — el resultado puede ser incorrecto o incompleto. Mantén los datos actualizados para obtener planes fiables.
                         </Callout>
                     </div>
                 </Card>

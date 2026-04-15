@@ -40,11 +40,11 @@ class MasterDataSeeder extends Seeder
         // tower     = Mid-Tower / Tower clásico vertical grande
         // ─────────────────────────────────────────────────────────────────────
         DB::table('box_types')->upsert([
-            ['code' => 'laptop',    'name' => 'Portátil',         'length_cm' => 40, 'width_cm' => 30, 'height_cm' => 12, 'weight_kg' => 4.50,  'security_separator_every_n_layers' => 7, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'mini_pc',   'name' => 'Mini PC (Tiny)',    'length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'weight_kg' => 3.20,  'security_separator_every_n_layers' => 5, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'tower_sff', 'name' => 'Torre SFF/Slim',    'length_cm' => 45, 'width_cm' => 28, 'height_cm' => 38, 'weight_kg' => 8.00,  'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'tower',     'name' => 'Torre (MT/Tower)',  'length_cm' => 60, 'width_cm' => 35, 'height_cm' => 50, 'weight_kg' => 10.00, 'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
-        ], ['code'], ['name', 'length_cm', 'width_cm', 'height_cm', 'weight_kg', 'security_separator_every_n_layers', 'updated_at']);
+            ['code' => 'laptop',    'name' => 'Portátil',        'length_cm' => 40, 'width_cm' => 30, 'height_cm' => 12, 'carton_weight_kg' => 0.60, 'security_separator_every_n_layers' => 7, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'mini_pc',   'name' => 'Mini PC (Tiny)',   'length_cm' => 35, 'width_cm' => 25, 'height_cm' => 15, 'carton_weight_kg' => 0.35, 'security_separator_every_n_layers' => 5, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'tower_sff', 'name' => 'Torre SFF/Slim',   'length_cm' => 45, 'width_cm' => 28, 'height_cm' => 38, 'carton_weight_kg' => 1.20, 'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'tower',     'name' => 'Torre (MT/Tower)', 'length_cm' => 60, 'width_cm' => 35, 'height_cm' => 50, 'carton_weight_kg' => 1.80, 'security_separator_every_n_layers' => 3, 'created_at' => now(), 'updated_at' => now()],
+        ], ['code'], ['name', 'length_cm', 'width_cm', 'height_cm', 'carton_weight_kg', 'security_separator_every_n_layers', 'updated_at']);
 
         $boxTypeId = fn(string $code) => DB::table('box_types')->where('code', $code)->value('id');
 
@@ -479,6 +479,60 @@ class MasterDataSeeder extends Seeder
                     }
                 }
             }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // TRANSPORTE PROPIO
+        // Precios estimados de gasolina por pallet según distancia.
+        // Un solo tramo (1-99 pallets) ya que el coste por pallet es fijo
+        // independientemente de cuántos quepan en la furgoneta.
+        // Las zonas se asignan manualmente a provincias desde /admin/provinces.
+        // ─────────────────────────────────────────────────────────────────────
+        DB::table('carriers')->upsert([
+            ['code'=>'transporte_propio','name'=>'Transporte Propio','is_active'=>1,'created_at'=>now(),'updated_at'=>now()],
+        ], ['code'], ['name','is_active','updated_at']);
+
+        $propioId = $getCarrierId('transporte_propio');
+
+        $propioZones = [
+            'Zona Cercana'  => $upsertZone($esId, 'Zona Cercana',  $propioId),  // 0–200 km
+            'Zona Media'    => $upsertZone($esId, 'Zona Media',    $propioId),  // 200–500 km
+            'Zona Nacional' => $upsertZone($esId, 'Zona Nacional', $propioId),  // >500 km
+            'Portugal'      => $upsertZone($ptId, 'Portugal',      $propioId),
+        ];
+
+        // Precios por pallet basados en coste real de combustible + conductor:
+        //   Cercana  (≈100km ida)  → furgoneta diésel ~€40 gasolina + conductor → €45 light / €65 full
+        //   Media    (≈300km ida)  →                   ~€90 gasolina + conductor → €90 light / €130 full
+        //   Nacional (≈600km ida)  →                  ~€140 gasolina + conductor → €150 light / €220 full
+        //   Portugal (≈500–700km)  →                  ~€120 gasolina + conductor → €130 light / €190 full
+        $propioRates = [
+            ['zone' => 'Zona Cercana',  'pallet' => 'light', 'price' =>  45.00],
+            ['zone' => 'Zona Cercana',  'pallet' => 'full',  'price' =>  65.00],
+            ['zone' => 'Zona Media',    'pallet' => 'light', 'price' =>  90.00],
+            ['zone' => 'Zona Media',    'pallet' => 'full',  'price' => 130.00],
+            ['zone' => 'Zona Nacional', 'pallet' => 'light', 'price' => 150.00],
+            ['zone' => 'Zona Nacional', 'pallet' => 'full',  'price' => 220.00],
+            ['zone' => 'Portugal',      'pallet' => 'light', 'price' => 130.00],
+            ['zone' => 'Portugal',      'pallet' => 'full',  'price' => 190.00],
+        ];
+
+        foreach ($propioRates as $r) {
+            DB::table('rates')->updateOrInsert(
+                [
+                    'carrier_id'     => $propioId,
+                    'zone_id'        => $propioZones[$r['zone']],
+                    'pallet_type_id' => $palletId($r['pallet']),
+                    'min_pallets'    => 1,
+                    'max_pallets'    => 99,
+                ],
+                [
+                    'price_eur'         => $r['price'],
+                    'carrier_rate_name' => 'Gasolina',
+                    'updated_at'        => now(),
+                    'created_at'        => now(),
+                ]
+            );
         }
     }
 

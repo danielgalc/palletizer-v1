@@ -1593,7 +1593,7 @@ export default function Index({ result }) {
             {isES ? (
               <div ref={containerRef} className="relative">
                 <Field
-                  label="Provincia"
+                  label="Destino"
                   error={errors.province_id}
                   hint={destinationDisabled ? "Selecciona primero un país." : "Escribe para buscar."}
                 >

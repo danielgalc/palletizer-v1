@@ -131,7 +131,7 @@ export default function Geography({ countries, carriers, zones, provinces, provi
         <AdminLayout title="Geografía">
             <PageHeader
                 title="Geografía"
-                description="Gestiona países, zonas de envío y provincias desde un solo lugar."
+                description="Gestiona países, zonas de envío y destinos desde un solo lugar."
                 action={<Btn onClick={openCreateCountry}>+ Nuevo país</Btn>}
             />
 
@@ -154,6 +154,7 @@ export default function Geography({ countries, carriers, zones, provinces, provi
                                 <span className="flex-1 font-semibold text-ink-900">{country.name}</span>
                                 <span className="text-xs text-ink-400">{totalZones} zona{totalZones !== 1 ? "s" : ""}</span>
                                 <div className="flex items-center gap-2 ml-2">
+                                    <Btn size="sm" variant="warning" onClick={() => openCreateZone(country)}>+ Zona</Btn>
                                     <ActionBtn type="edit" onClick={() => openEditCountry(country)} />
                                     <ActionBtn type="delete" onClick={() => setDeleteCountry(country)} />
                                 </div>
@@ -207,9 +208,9 @@ export default function Geography({ countries, carriers, zones, provinces, provi
                                                                         </button>
                                                                         <span className="text-ink-200 text-xs">└</span>
                                                                         <span className="flex-1 text-sm text-ink-600">{zone.name}</span>
-                                                                        <span className="text-xs text-ink-400">{zProvs.length} prov.</span>
+                                                                        <span className="text-xs text-ink-400">{zProvs.length} dest.</span>
                                                                         <div className="flex items-center gap-2 ml-2">
-                                                                            <Btn size="sm" variant="warning" onClick={() => openCreateProv(zone)}>+ Provincia</Btn>
+                                                                            <Btn size="sm" variant="warning" onClick={() => openCreateProv(zone)}>+ Destino</Btn>
                                                                             <ActionBtn type="edit" onClick={() => openEditZone(zone)} />
                                                                             <ActionBtn type="delete" onClick={() => setDeleteZone(zone)} />
                                                                         </div>
@@ -219,7 +220,7 @@ export default function Geography({ countries, carriers, zones, provinces, provi
                                                                     {isExpZ && (
                                                                         <div className="border-t border-ink-50 bg-white">
                                                                             {zProvs.length === 0 ? (
-                                                                                <p className="px-24 py-2 text-xs text-ink-400">Sin provincias asignadas.</p>
+                                                                                <p className="px-24 py-2 text-xs text-ink-400">Sin destinos asignados.</p>
                                                                             ) : (
                                                                                 <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 py-3 pl-20 pr-4 sm:grid-cols-3 lg:grid-cols-4">
                                                                                     {zProvs.map((p) => (
@@ -271,30 +272,22 @@ export default function Geography({ countries, carriers, zones, provinces, provi
             {/* ── Modal Zona ──────────────────────────────────────────────────── */}
             <Modal
                 open={zoneModal}
-                title={editingZone ? "Editar zona" : `Nueva zona${zoneContext?.country ? ` — ${zoneContext.country.name}` : ""}`}
+                title={editingZone
+                    ? "Editar zona"
+                    : `Nueva zona${zoneContext?.country ? ` — ${zoneContext.country.name}` : ""}`}
                 onClose={closeZoneModal}
             >
                 <form onSubmit={submitZone} className="space-y-4">
-                    {/* Selector de transportista: solo al crear, o si no hay carrier preseleccionado */}
-                    {(!editingZone) && (
-                        <Field label="Transportista" error={zoneForm.errors.carrier_id} required>
-                            <Select
-                                value={zoneForm.data.carrier_id}
-                                onChange={(e) => zoneForm.setData("carrier_id", e.target.value)}
-                                disabled={!!zoneContext?.carrier}
-                            >
-                                <option value="">Selecciona…</option>
-                                {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </Select>
-                        </Field>
-                    )}
-                    {editingZone && (
-                        <Field label="Transportista" error={zoneForm.errors.carrier_id} required>
-                            <Select value={zoneForm.data.carrier_id} onChange={(e) => zoneForm.setData("carrier_id", e.target.value)}>
-                                {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </Select>
-                        </Field>
-                    )}
+                    <Field label="Transportista" error={zoneForm.errors.carrier_id} required>
+                        <Select
+                            value={zoneForm.data.carrier_id}
+                            onChange={(e) => zoneForm.setData("carrier_id", e.target.value)}
+                            disabled={!!zoneContext?.carrier}
+                        >
+                            <option value="">Selecciona…</option>
+                            {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </Select>
+                    </Field>
                     <Field label="Nombre de la zona" error={zoneForm.errors.name} required hint="Ej: Zona 1, Zona Insular, Norte">
                         <Input value={zoneForm.data.name} onChange={(e) => zoneForm.setData("name", e.target.value)} placeholder="Zona 1" />
                     </Field>
@@ -308,7 +301,7 @@ export default function Geography({ countries, carriers, zones, provinces, provi
             {/* ── Modal Provincia ─────────────────────────────────────────────── */}
             <Modal
                 open={provModal}
-                title={editingProv ? "Editar provincia" : `Nueva provincia — ${provZoneCtx?.name ?? ""}`}
+                title={editingProv ? "Editar destino" : `Nuevo destino — ${provZoneCtx?.name ?? ""}`}
                 onClose={closeProvModal}
             >
                 <form onSubmit={submitProv} className="space-y-4">
@@ -341,15 +334,15 @@ export default function Geography({ countries, carriers, zones, provinces, provi
             <ConfirmDialog
                 open={!!deleteZone}
                 title="¿Eliminar zona?"
-                message={`Se eliminará "${deleteZone?.name}". Solo es posible si no tiene provincias ni tarifas.`}
+                message={`Se eliminará "${deleteZone?.name}". Solo es posible si no tiene destinos ni tarifas.`}
                 onConfirm={() => zoneForm.delete(`/admin/zones/${deleteZone.id}`, { preserveScroll: true, onSuccess: () => setDeleteZone(null) })}
                 onCancel={() => setDeleteZone(null)}
                 loading={zoneForm.processing}
             />
             <ConfirmDialog
                 open={!!deleteProv}
-                title="¿Eliminar provincia?"
-                message={`Se quitará "${deleteProv?.name}" de la zona "${deleteProv?.zone?.name}".`}
+                title="¿Eliminar destino?"
+                message={`Se quitará el destino "${deleteProv?.name}" de la zona "${deleteProv?.zone?.name}".`}
                 onConfirm={() => provForm.delete(`/admin/provinces/${deleteProv.id}`, {
                     data: { zone_id: deleteProv.zone?.id },
                     preserveScroll: true,

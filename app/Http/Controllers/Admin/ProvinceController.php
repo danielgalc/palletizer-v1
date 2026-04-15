@@ -30,7 +30,7 @@ class ProvinceController extends Controller
                 ->exists();
 
             if ($alreadyInZone) {
-                return back()->withErrors(['name' => 'Esta provincia ya está asignada a esa zona.']);
+                return back()->withErrors(['name' => 'Este destino ya está asignado a esa zona.']);
             }
 
             // ¿Ya está en otra zona del MISMO carrier? (una provincia = una zona por carrier)
@@ -60,7 +60,7 @@ class ProvinceController extends Controller
             'updated_at'  => now(),
         ]);
 
-        return back()->with('success', "Provincia {$data['name']} asignada.");
+        return back()->with('success', "Destino {$data['name']} asignado.");
     }
 
     public function update(Request $request, int $id)
@@ -85,7 +85,7 @@ class ProvinceController extends Controller
                 'updated_at' => now(),
             ]);
 
-        return back()->with('success', 'Provincia actualizada.');
+        return back()->with('success', 'Destino actualizado.');
     }
 
     public function destroy(Request $request, int $id)
@@ -109,6 +109,6 @@ class ProvinceController extends Controller
             DB::table('provinces')->where('id', $id)->delete();
         }
 
-        return back()->with('success', 'Provincia eliminada.');
+        return back()->with('success', 'Destino eliminado.');
     }
 }

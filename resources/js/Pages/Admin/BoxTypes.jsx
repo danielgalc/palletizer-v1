@@ -9,7 +9,7 @@ import {
 const EMPTY = {
     code: "", name: "",
     length_cm: "", width_cm: "", height_cm: "",
-    weight_kg: "",
+    carton_weight_kg: "",
     security_separator_every_n_layers: "",
 };
 
@@ -30,7 +30,7 @@ export default function BoxTypes({ boxTypes }) {
             let cmp = 0;
             if (sortBy === "name")   cmp = a.name.localeCompare(b.name);
             if (sortBy === "volume") cmp = (a.length_cm * a.width_cm * a.height_cm) - (b.length_cm * b.width_cm * b.height_cm);
-            if (sortBy === "weight") cmp = a.weight_kg - b.weight_kg;
+            if (sortBy === "weight") cmp = a.carton_weight_kg - b.carton_weight_kg;
             return sortDir === "asc" ? cmp : -cmp;
         });
     }, [boxTypes, search, sortBy, sortDir]);
@@ -43,7 +43,7 @@ export default function BoxTypes({ boxTypes }) {
         setData({
             code: b.code, name: b.name,
             length_cm: b.length_cm, width_cm: b.width_cm, height_cm: b.height_cm,
-            weight_kg: b.weight_kg,
+            carton_weight_kg: b.carton_weight_kg,
             security_separator_every_n_layers: b.security_separator_every_n_layers ?? "",
         });
         setEditing(b); setModalOpen(true);
@@ -91,13 +91,13 @@ export default function BoxTypes({ boxTypes }) {
                 </span>
             </div>
 
-            <Table headers={["Código", "Nombre", "Dimensiones (cm)", "Peso (kg)", "Sep. seguridad", "Acciones"]} empty="No hay tipos que coincidan.">
+            <Table headers={["Código", "Nombre", "Dimensiones (cm)", "Peso cartón (kg)", "Sep. seguridad", "Acciones"]} empty="No hay tipos que coincidan.">
                 {filtered.map((b) => (
                     <Tr key={b.id}>
                         <Td><code className="rounded bg-ink-100 px-1.5 py-0.5 text-xs">{b.code}</code></Td>
                         <Td className="font-semibold">{b.name}</Td>
                         <Td>{b.length_cm} × {b.width_cm} × {b.height_cm}</Td>
-                        <Td>{b.weight_kg} kg</Td>
+                        <Td>{b.carton_weight_kg} kg</Td>
                         <Td>
                             {b.security_separator_every_n_layers
                                 ? `Cada ${b.security_separator_every_n_layers} capas`
@@ -146,8 +146,8 @@ export default function BoxTypes({ boxTypes }) {
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                        <Field label="Peso fallback (kg)" error={errors.weight_kg} required hint="Peso estimado equipo + caja sin datos de modelo">
-                            <Input type="number" min="0" step="0.01" value={data.weight_kg} onChange={(e) => setData("weight_kg", e.target.value)} />
+                        <Field label="Peso cartón (kg)" error={errors.carton_weight_kg} required hint="Peso de la caja de cartón vacía">
+                            <Input type="number" min="0" step="0.01" value={data.carton_weight_kg} onChange={(e) => setData("carton_weight_kg", e.target.value)} />
                         </Field>
                         <Field label="Separador cada N capas" error={errors.security_separator_every_n_layers} hint="Dejar vacío para no usar separador">
                             <Input type="number" min="1" value={data.security_separator_every_n_layers} onChange={(e) => setData("security_separator_every_n_layers", e.target.value)} placeholder="3" />

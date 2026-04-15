@@ -58,11 +58,11 @@ export default function Provinces({ provinces, zones, filters }) {
     };
 
     return (
-        <AdminLayout title="Provincias">
+        <AdminLayout title="Destinos">
             <PageHeader
-                title="Provincias"
-                description="Gestiona las provincias y su zona de transporte asignada."
-                action={<Btn onClick={openCreate}>+ Nueva provincia</Btn>}
+                title="Destinos"
+                description="Gestiona los destinos y su zona de transporte asignada."
+                action={<Btn onClick={openCreate}>+ Nuevo destino</Btn>}
             />
 
             <div className="mb-4">
@@ -74,8 +74,8 @@ export default function Provinces({ provinces, zones, filters }) {
                 />
             </div>
 
-            <Table headers={["Provincia", "Zona", "País", "Acciones"]}
-                   empty="No hay provincias que coincidan con la búsqueda.">
+            <Table headers={["Destino", "Zona", "País", "Acciones"]}
+                   empty="No hay destinos que coincidan con la búsqueda.">
                 {provinces.data.map((p) => (
                     <Tr key={p.id}>
                         <Td className="font-semibold">{p.name}</Td>
@@ -93,7 +93,7 @@ export default function Provinces({ provinces, zones, filters }) {
 
             <Pagination pagination={provinces} onPageChange={goToPage} />
 
-            <Modal open={modalOpen} title={editing ? "Editar provincia" : "Nueva provincia"} onClose={closeModal}>
+            <Modal open={modalOpen} title={editing ? "Editar destino" : "Nuevo destino"} onClose={closeModal}>
                 <form onSubmit={submit} className="space-y-4">
                     <Field label="Nombre" error={errors.name} required>
                         <Input
@@ -123,8 +123,8 @@ export default function Provinces({ provinces, zones, filters }) {
 
             <ConfirmDialog
                 open={!!deleteTarget}
-                title="¿Eliminar provincia?"
-                message={`Se eliminará la provincia "${deleteTarget?.name}".`}
+                title="¿Eliminar destino?"
+                message={`Se eliminará el destino "${deleteTarget?.name}".`}
                 onConfirm={() => destroy(`/admin/provinces/${deleteTarget.id}`, {
                     preserveScroll: true, onSuccess: () => setDeleteTarget(null),
                 })}
