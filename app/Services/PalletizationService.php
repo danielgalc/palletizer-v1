@@ -481,7 +481,7 @@ class PalletizationService
             'mini_pc'   => (int)($items['mini_pc'] ?? 0),
         ];
 
-        // Si vienen lines, calculamos el peso por tipo a partir de device_models.weight_kg (fallback a box_types.weight_kg)
+        // Si vienen lines, calculamos el peso por tipo a partir de device_models.weight_kg
         $weightByCode = [];
 
         if (isset($items['lines']) && is_array($items['lines']) && count($items['lines']) > 0) {
@@ -502,7 +502,6 @@ class PalletizationService
                         'dm.id',
                         'dm.weight_kg as model_weight_kg',
                         'bt.code as box_code',
-                        'bt.weight_kg as box_weight_kg',
                     ])
                     ->get();
 
@@ -517,7 +516,7 @@ class PalletizationService
                     $qty = (int) ($modelQty[$id] ?? 0);
                     if ($qty <= 0) continue;
 
-                    $w = $r->model_weight_kg !== null ? (float) $r->model_weight_kg : (float) $r->box_weight_kg;
+                    $w = $r->model_weight_kg !== null ? (float) $r->model_weight_kg : 0.0;
                     if ($w <= 0) continue;
 
                     $sumW[$code] = ($sumW[$code] ?? 0) + ($qty * $w);
